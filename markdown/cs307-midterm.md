@@ -87,7 +87,7 @@ Speedup = \frac
     1
 }
 {
-    \frac{Fraction_{enhanced}{Speedup_{enhanced}}} + (1 - Fraction_{enhanced})
+    \frac{Fraction_{enhanced}}{{Speedup_{enhanced}}} + (1 - Fraction_{enhanced})
 }
 $$
 
