@@ -270,3 +270,111 @@ We make a really tall directory, instead of a really wide one.
 
 ---
 # Week 04: Optimization
+What we want to do, knowing memory hierarchy, is maximize the number of L1
+hits, given that lower-level memory accesses are the biggest cause of bottlenecks.
+
+## Four C's
+We define four different types of cache misses
+
+- **Compulsory:** Data is accessed for the first time
+- **Capacity:** Cache isn't big enough *(try and access an array bigger than cache)*
+- **Conflict:** Two addresses map to the same address and way
+- **Coherence:** Block is removed due to coherence messages from other cores
+
+## True Sharing vs. False Sharing
+
+- **True Sharing:** Producer/Consumer communication. One processor writes while
+the other reads the same value
+- **False Sharing:** Two processors update different data that happens to be 
+placed in the same cache block.
+
+### Data Padding
+This is a technique used to avoid false sharing. If data is padded enough, then
+we avoid two data elements stored in two different caches being stored in the 
+same cache blocks. This behavior depends on underlying hardware, and this should
+be a deciding factor in choosing how much to pad a piece of data.
+
+#### The Problem with Padding
+In caches with large block sizes, we naturally have to pad more. This means
+that more data is needed for every individual element, and we end up having more
+capacity misses due to each element requiring more space in cache.
+
+
+## Optimization Examples
+### Optimization Example: Tiling
+This is a true sharing optimization that involves optimizing cache-locality. 
+Every threads loads data in such a way that it loads data that will be needed
+soon after.
+
+### Optimization Example: Avoid Excessive Fork-Joins
+Instead of
+```C
+#pragma omp parallel for
+for(...)
+
+#pragma omp parallel for
+for(...)
+
+#pragma omp parallel for
+for(...)
+
+#pragma omp parallel for
+for(...)
+```
+
+Go for something like
+```C
+#pragma omp parallel
+{
+    #pragma omp for
+    for(...)
+
+    #pragma omp for
+    for(...)
+
+    #pragma omp for
+    for(...)
+
+    #pragma omp for
+    for(...)
+}
+```
+### Optimization Example: Loop Unrolling
+Instead of 
+```C
+#pragma omp parallel for
+for (int i = 0; i < n; i++)
+    a[i]++;
+
+```
+
+Go for
+```C
+#pragma omp parallel for
+for (int i = 0; i < n; i+=4)
+{
+    a[i]++;
+    a[i+1]++;
+    a[i+2]++;
+    a[i+3]++;
+}
+```
+
+## Division of Work and Load Balancing
+There are three different types of load balancing, each accompanies by their
+own clauses in OMP.
+
+**Static**
+
+- Low overhead
+- May exhibit high workload imbalance
+
+**Dynamic (Task Queue)**
+
+- High overhead
+- Can reduce workload imbalance
+
+**Guided**
+
+- Less overhead than dynamic
+- Comparable to dynamic in reducing workload imbalance
