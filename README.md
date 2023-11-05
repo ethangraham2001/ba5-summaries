@@ -1,3 +1,8 @@
 # Compiling to PDF
-To compile from `.md` to `.pdf`, run the `make` command from root of project
-directory
+To compile to `.pdf` from `.md`, run
+
+```console
+$ python3 compile.py
+```
+
+Requires `pandoc` and $\LaTeX$

@@ -415,3 +415,13 @@ It is possible, in this example, that the lines $r_0 = B$ and $r_1 = A$ are
 executed ***before*** the lines $A = 1$ and $B = 1$. This means that `0, 0` is a 
 valid output. How is this possible? Memory access overlapping.
 
+It goes as follows: 
+
+0. Both A and B start in the shared state of both processors' caches.
+1. Both $P_0$ and $P_1$ issue their writes into the point-to-point network 
+simultaneously
+2. Both CPUs issue their reads. Since their caches are non-blocking, they hit
+before the the writes have finished.
+
+Thus they both return `A = B = 0`.
+
