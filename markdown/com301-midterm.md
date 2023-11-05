@@ -181,6 +181,7 @@ triplets within a system. We generally classify access rights as
 
 This isn't directly implementable realistically. If we have loads of files, 
 then we are going to have shite time complexity
+
 $$
 O(f \cdot u)
 $$
@@ -316,3 +317,113 @@ unknown code using these access rights. Limits damage if the code misbehaves
 
 ***
 # Week 04: Mandatory Access Control *(MAC)*
+## No Ownership
+Even if a given user produces a file, they are not the ones setting the access
+rights on it. That is determined by the security policy.
+
+Remember that a security model is **not** a policy or mechanism - it is simply
+a design pattern and a way of reasoning about security properties. They
+provide no details about the policy - that is still to be designed by the 
+security engineer, and carefully following the model doesn't guarantee security.
+
+## Bell-La Padula Model *(BLP)*
+We associate subjects and objects to a level of confidentiality: i.e. protect
+objects against being accessed from non-authorized subjects.
+
+### Recall: Access Rights
+
+- Execute
+- Read
+- Append
+- Write
+
+## Level Function for Objects
+We associate each object to a ***security level*** based on a ***label*** and 
+one or more ***categories***
+```
+security_level = (classification, {set of categories})
+```
+
+- **Classification** is a total ordering of labels
+- **Categories** are compartments of objects with a common topic
+
+### Dominance Relationship
+A security level `(l_0, c_0)` *dominates* `(l_1, c_1)` iff. `l_0 >= l_1` 
+*(in the defined total ordering)* and $c_1 \subset c_0$
+
+### Dominance Lattice
+There are three key properties to keep in mind
+
+1. "Dominates" is transitive
+2. There are top and bottom elements
+3. "Dominates" only has a partial order (not all elements can be compared as they 
+have no relationship)
+
+#### Clearance Level
+This is defined as the maximum security level that a subject has been assigned.
+We define this as $level(S_i)$
+
+#### Current Security Level
+Subjects can operate at lower security levels than this
+We define this as $current-level(S_i)$
+
+***The clearance level dominates the current security level.***
+
+## 1. Simple Security *(SS)* Property in BLP System
+The subject can only access objects that are in its current security level, 
+which by definition is dominated by their clearance level. We also call this
+property **no-read-up**
+
+The problem with forbidding people to read up is that if a malicious user
+and higher clearance modifies code giving classified information to lower-clearance 
+users, thus violating the SS property.
+
+## 2. Star Property or *-Property in a BLP System
+Formally, if a subject has simulataneous *observe* `(r, w)` access to $O_1$, 
+and *alter* `(a, w)` access to $O_2$, then $level(O_2)$ dominates $level(O_1)$
+
+What this means is that subjects can't write in clearance levels lower than
+theirs, therefore they can't leak information to lower levels.
+
+## 3. Discretionary Property or DS-Property in a BLP System
+
+If an access `(subject, object, action)` takes place, then it must be in the 
+access control matrix. 
+
+This is saying that we need DAC as well basically. Regardless on privilege,
+accesses should be done on a need-to-know basis. Always.
+
+## BLP Basic Security Theorem
+If all state transistions are secure, and the initial state is secure, then 
+every subsequent state change is also secure regardless of the inputs.
+
+If all three aforementioned properties hold for any individual access, then 
+sequential composition security holds. This implies that a system can be analyzed
+in terms of single step transitions of states.
+
+## Covert Channels
+Any channel in which information flows contrary to the security. The more
+resources are shared, the harder it is to prevent them.
+
+### Mitigating Them
+The best we can do is add noise to data, or try isolte high-level information
+(prevent it from flowing down). This doesn't eliminate anything, just limits.
+
+## Big Problem with BLP
+BLP says nothing about level-changes. This can be problematic, and lead to the
+flow of classified higher-clearance information.
+
+*How does the general communciate with soldiers after reading classified information
+if there is a no-write-down policy?*
+
+To communicate with lower levels, it is common to include a declassification process.
+$\rightarrow$ clean a higher-level process of information so that it can be
+shared with lower-levels. It is very difficult to rule out information leakage
+however.
+
+### Limitations
+
+- Only cares about confidentiality (doesn't consider integrity or availability)
+- State-based + sinle-transition model isn't expressive enough
+- The three properties aren't enough to ensure confidentiality
+
