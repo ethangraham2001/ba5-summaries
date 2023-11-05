@@ -518,3 +518,35 @@ the instruction finally arrived at the head of the LSQ, it will hit. We have
 effectively overlapped two instructions without violating program order or atomicity.
 
 This is called **L1 peeking**, and it helps overlap all long-latency operations.
+We do this for all waiting ops in an attempt overlap latency.
+
+## Relaxed Consistency Models
+We can only go so far with SC and peeking. If the ROB is full, then even if we
+have peeked and are loading in more cache blocks to overlap latency, we can't
+fetch anymore new instructions while waiting.
+
+**Idea:** relax write-to-read dependencies *(that is, writes block younger reads)*.
+
+## Processor Consistency *(a.k.a Per-Processor Consistency)*
+Formally, we define with the following specification
+
+- Before a load is performed with respect to other processors, all preceeding
+loads must be performed
+- Before a store is performed with respect to other processors, all preceeding
+operations (loads and stored) must be performed
+
+Since this description is very unclear, a better way to put it is:
+
+"Each processor observes operations in an order that is consistent with its own
+program, but the global order of memory operations may differ between processors,
+providing more flexibility for optimization and better performance."
+
+This consistency model is widely employed, since it is fast while remaining
+relatively easy to reason about. Most ISAs provide instructions that enfoce
+atomicity, *e.g.* `xchg` on x86 architecture.
+
+## Weak Consistency
+Memory ops are classified either as data or synchronization. Only synchronization
+ops have any notion of ordering, whereas data ops have no enfored order among
+themselves. Synchronization ops are called `Fences`. This consistency model is
+used on ARM architectures.
