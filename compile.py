@@ -5,6 +5,11 @@ from colorama import Fore, Style
 MARKDOWN_DIR = 'markdown'
 PDF_DIR = 'pdf'
 
+if not(os.path.exists(PDF_DIR) and os.path.isdir(PDF_DIR)):
+    print(f'{Style.DIM}Creating /pdf directory... {Style.RESET_ALL}')
+    os.mkdir(PDF_DIR)
+
+
 markdown_list = [file for file in os.listdir(MARKDOWN_DIR) if file.endswith('.md')]
 
 print(Style.BRIGHT + "Generating PDF files..." + Style.RESET_ALL)
