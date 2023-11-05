@@ -44,7 +44,7 @@ In a multiprocessor, memory accesses (`ld`, `st`) are not commonly executed
 in program order or atomically. We will learn to deal with this throughout the
 course.
 
----
+***
 # Week 02: Parallelism
 
 ## Recall: Unicore Parallelism
@@ -120,7 +120,7 @@ also uniformly far away.
 Non-uniform access allows for high-bandwidth and low-latency access to local
 memory. Bandwidth scales with number of nodes since most accesses are local.
 
----
+***
 # Week 03: Coherence
 
 ## Temporal and Spacial Locality
@@ -378,3 +378,40 @@ own clauses in OMP.
 
 - Less overhead than dynamic
 - Comparable to dynamic in reducing workload imbalance
+
+***
+# Week 05: Memory Consistency I
+
+## Coherence vs. Consistency
+Coherence solves the problem of two caches transparently sharing a single
+memory location $X$. Coherence gives the programmer the illusion of uniform
+memory across all CPUs.
+
+Consistency defines the behavior of read and write operations across different
+addresses
+
+## Memory Access Overlaps
+It is possible for modern CPUs to re-order memory accesses. This is illustrated
+with the following....
+
+Assume that $P_0$ runs
+```python
+# A = r_0 = 0
+
+A = 1
+r_0 = B
+print(r_0)
+```
+and assume that processor $P_1$ runs this concurrently
+```python
+# B = r_1 = 0
+
+B = 1
+r_1 = A
+print(r_1)
+```
+
+It is possible, in this example, that the lines $r_0 = B$ and $r_1 = A$ are
+executed ***before*** the lines $A = 1$ and $B = 1$. This means that `0, 0` is a 
+valid output. How is this possible? Memory access overlapping.
+
