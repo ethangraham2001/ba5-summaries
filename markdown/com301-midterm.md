@@ -427,3 +427,32 @@ however.
 - State-based + sinle-transition model isn't expressive enough
 - The three properties aren't enough to ensure confidentiality
 
+We will not talk about ensuring integrity as well...
+
+## BIBA Model for Integrity
+BIBA implements the following
+
+- **No read-down:** protects higher-level integrity principals being corrupted
+by lower-integrity data
+- **No write-up:** prevents lower integrity principals from corrupting high
+integrity data
+
+Here we only consider operations `read` and `write` (so two instead of four).
+
+### Example 1:
+In a bank, a director can establish a rule and every employee can read it.
+Employees cannot rewrite any rules.
+
+### Example 2:
+On a computer, a web application open in the browser shouldn't write to the 
+filesystem (at most `/tmp`).
+
+## BIBA Variant 1: Low-water-mark for Subjects
+Subjects start processes at their highest integrity level. When accessing a
+an object, the process's current level is lowered to `min(curren_level(s), level(o))`.
+
+$\rightarrow$ We temporarily downgrade for the session to be able to leave low
+integrity data.
+
+## BIBA Variant 2: Low-water-mark for Objects
+
