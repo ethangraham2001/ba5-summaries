@@ -425,3 +425,96 @@ before the the writes have finished.
 
 Thus they both return `A = B = 0`.
 
+## Sequential Consistency
+*"Multiprocessors should behave like multitasked uniprocessors*". More formally,
+the result of any execution is the same as if all operations of all processors
+were executed in some sequential order, and the operations of each individual 
+processor appear in this sequence in the order specified by its program.
+
+In **SC**, memory appears like it has a "switch" in front of it, executing
+each program's memory accesses atomically and in program order.
+
+In the example above, the observed result is such that $A = 1$ always happens
+before $r_0 = B$, and $B = 1$ always happens before $r_0 = B$. SC doesn't say
+anything else about the interleaving of the two processes, however.
+
+### Implementing SC
+We require the following:
+
+1. Memory accesses happen in program order
+2. Memory operations appear atomic
+
+## Reminder: Out-of-order Pipeline
+The idea is that we fetch instructions in order, execute them out of order
+(including memory accesses) and retire them in order again. Retiring in order
+is necessary if we want to be able to keep track of exceptions, and where they
+happened.
+
+## Register Dependencies, and Memory Dependencies
+Register names are encoded in the instruction, and all register dependencies
+are established at the decode stage, thus in program order.
+
+This is non-trivial with memory ops. Consider the following example
+```asm
+st $r2, 4($r1)
+ld $r3, 8($r5)
+```
+If `4($r1)` and `8($r5)` are the same, then `$r3` needs to get the value from
+`$r2`. If not, then they could have been re-ordered safely.
+
+We need to do the following:
+
+- Track the FIFO program order of loads and stores
+- Resolve addresses when they are ready
+- On a load, check for the **youngest** store to this address
+
+We do this with a ***load-store queue*** (LSQ) which
+
+1. Resolves which load/store addresses overlap
+2. Holds all store operations until they retire
+
+An LSQ cannot write speculative values to caches. Speculative values are those
+that ran out of order, so the LSQ waits until all prior accesses are complete
+before writing them, otherwise it could corrupt the system's state.
+
+Load-store queues get super hot, because they do so much work.
+
+### Address Resolution in LSQ
+The idea is to use a $N \times N$ half-matrix of comparators that cross-checks
+every entry against all **older** entries.
+
+### Blocking Speculative Stores
+The LSQ and ROB work hand-in-hand. The idea is that we only remove an LSQ entry
+when a store exits the ROB.
+
+Once a store is in the retired state, we can't revert it back anymore. We have
+to be sure before retiring.
+
+## Store Buffer
+The store buffer sits between the core and the L1 cache, and holds all committed
+stores. When a store leaves the core, it goes into the store buffer. Allows us
+to avoid using L1 bandwidth when we are loading recently stored values. We now
+check both the SB and the L1 when we load.
+
+The store buffer is considered to be a part of L1. We just use it temporarily
+hold recently committed stores.
+
+## Using Stalled Operations in LSQ
+Assume that some load/store operation is stalled waiting for operations ahead of it
+in the queue to commit. In traditional SC, I can't do anything with it... When this instruction
+gets to the head of the queue, and it misses in L1 cache, I spend 100 cycles
+waiting for that block to be retrieved from lower-level cache.
+
+**Key insight:** I can fetch cache blocks corresponding to any stalled load/store
+operations before they are needed, and put them in L1 in anticipation for their
+arrival at the head of the queue.
+
+This does not impact order or atomicity, and we can save loads of cycles by
+overlapping this fetch with the current fetch that is happening at the front of 
+the queue.
+
+Note, **I do not put this fetched value in the core**, I just put it in L1. When
+the instruction finally arrived at the head of the LSQ, it will hit. We have
+effectively overlapped two instructions without violating program order or atomicity.
+
+This is called **L1 peeking**, and it helps overlap all long-latency operations.
