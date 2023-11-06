@@ -381,3 +381,85 @@ set of rules that adjusts priorities dynamically.
 5. Periodically move all processes to the topmost priority *(priority boosting)*.
 This avoids starvation. We do this after every *boosting window* which can be,
 for example, 50ms
+
+# Week 05 Memory Virtualization
+We already went over the structure of a process's memory
+
+- Call stack for temporary data
+- Heap for dynamic allocation
+- Data segment known at compile time
+- Read-only text segment
+
+We will go more in depth now
+
+## Stack
+FILO data structure with `push` and `pop` operations. When a function is called,
+an ***invocation frame*** is allocated that stored all local variables and the
+necessary context to run the function that has been called *(callee)*
+
+### Example 1
+```C
+void func()
+{
+    int x; 
+}
+```
+All the work here is done statically by the compiler, which is local to the
+function run by a process. It allocates and deallocates space in the stack
+segment. In this example, we need to store `x` in the invocation frame of
+`func`.
+
+### Example 2
+```C
+int called(int a, int b)
+{
+    int tmp = a * b;
+    return tmp / 42;
+}
+
+void main(int argc, char *argv[])
+{
+    int tmp = called(argc, argv);
+}
+```
+What is stored in the invocation frame? Here we have
+
+- slot for `tmp`
+- slot for parameters `a`, `b`
+- slot for the return code pointer `RIP`
+
+The order of the stack is thus `b`, `a`, `RIP`, `tmp` (because FILO).
+
+## Heap
+We want to be able to allocate memory at runtime, and then indicate when it is
+no longer being used. For this we use `alloc` and `free`
+
+We implement it by abstracting the heap into objects called free blocks. To
+allocate, we find a fitting object
+
+- **First fit:** Find the first object that fits and split it
+- **Best fit:** Find that object that is closest in size
+- **Worst fit:** Find the largest object and split it
+
+To free, we merge adjacent blocks.
+
+### Interaction with OS
+The operating system gives the process a large memory region to store heap
+objects (`sbrk()`, `mmap()` syscalls to allocate memory).
+
+## Example Putting it all Together
+
+```C
+int g;
+int main(int argc, char* argv[])
+{
+    int foo;
+    char *c = (char*)malloc(argc*sizeof(int));
+    free(c);
+}
+```
+
+- **stack:** `foo`, `c`
+- **heap:** `*c`
+- **data:** `g` *(global variable)*
+- **text:** `main()` *(since it is code)*
