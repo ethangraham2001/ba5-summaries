@@ -267,6 +267,10 @@ Each syscall has a specified number. The process places this number (related
 to the syscall) in a special register that will be checked by the OS for validity
 before executing the corresponding syscall code.
 
+$$
+trap \equiv exception
+$$
+
 ## Interrupts for Regaining Control
 We know what interrupts are for this point. Since we don't know that a process
 is necessarily going to try some illegal action or make a syscall, we can't
@@ -277,3 +281,103 @@ switching it from user mode to kernel mode. ***This is called context switching*
 In the Linux kernel, the CPU takes back control every 10ms.
 
 Note that interrupts are disabled during the execution of an interrupt handler.
+
+# Week 04: Scheduling
+An **OS scheduler** is the mechanism used for stopping one process and starting
+another. We define two distinct types:
+
+- **Non-preemptive:** Polite ones that switch only when a process is blocked
+- **Preemptive:** Can switch even if the process is ready to continue execution.
+This ensures that the OS has control
+
+## Context-Switching
+Recall that **context-switching** is the term that we use to refer to changing
+from one process to the next *(stopping one, starting another)*.
+
+This involves storing the state of the current process state and switching to 
+another previously stored context. The process state is represented in the 
+***process control block (PCB)*** *(this includes hardware registers that are
+stored)*
+
+### Context-Switch Procedure
+
+1. **Save** the process execution state in the PCB
+2. **Select** the next thread
+3. **Restore** the execution state of the next process 
+4. **Passes** control using *return from trap*
+
+The PCB is just a data structure associated with each process.
+
+## Scheduler Implementations
+We note in passing that most kernels have a low priority process called the
+idle process that is scheduled when there are no other processes to schedule.
+
+Two terms to define before listing off specific scheduler implementations
+
+- **Utilization:** What fraction of time is CPU executing a job. We want to
+maximize CPU usage for best efficiency.
+- **Turnover Time:** Total time from job arrival to job completion. We want to
+minimize turnover time.
+- **Response Time:** How long until a job that arrives is scheduled
+
+### FIFO Scheduler *(first in, first out), non-preemptive*
+This works reasonably well if we assume that all jobs arrive at the same time
+*(an unrealistic assumption)*. However, if a long-latency job arrives first, 
+then all jobs arriving at the FIFO afterwards end up waiting for this job to finish.
+The avg. turnover time suffers as a result, with the first job dominating
+execution time.
+
+### SJF Scheduler *(Shortest Job First), non-preemptive*
+If we know the execution times of the jobs that are going to be scheduled, 
+then we can schedule the shortest ones first to minimize the avg. turnover time.
+Again, this is unrealistic since irl we don't execution time before executing a job.
+However, long-executing jobs can't be interrupted and therefore if they arrive
+first, this is just as bad as FIFO since the short-execution jobs will have to
+wait for them to finish.
+
+Putting the unrealism aside, this scheduler implementation performs better than
+FIFO in terms of avg. turnover time.
+
+### STCF Scheulder *(Shortest time to completion), preemptive*
+This simply extends SJF by adding preemption. Every time a new job enters the 
+system
+
+1. Determine which of the remaining jobs, including new one, has the least time
+left.
+2. Schedule the shortest job first.
+
+This addresses the issue that is caused when a long job arrives to the queue
+first and blocks the short ones. This improves the average turnover time of
+SJF.
+
+Until now we only optimized for turnover time, which STCF does well. However,
+STCF is shit at response time which has become more important *(for example for
+video games, etc...)*
+
+### RR Scheulder *(Round Robin), preemptive*
+Instead of running jobs to completion, run them for a fixed time interval, and
+then switch to the next `READY` job in the queue.
+
+In a lot of cases RR has better response time than STCF, but worse turnover time.
+RR is a fair policy since it evenly divides CPU time among `READY` processes. 
+
+If we now also consider **IO** as something that schedulers need to handle, then
+RR works well as it can overlap IO and CPU, leading to better CPU utilization
+
+### MLFQ *(multi-level feedback queue), preemptive*
+The goal is to support general purpose scheduling, supporting both long running
+background *(batch processing)* and low latency foreground tasks *(interactive
+processing)*. The response time isn't important for the first, but is for the 
+second.
+
+MLFQ first optimizes turnaround time *(important for batch processes)*, then
+optimizes response time *(important for interactive processes)*. We have a 
+set of rules that adjusts priorities dynamically.
+
+1. `if priority(A) > priority(B)`, then run `A`
+2. `if priority(A) == priority(B)`, then run `A`, `B` in RR
+3. Processes start at the top priority
+4. If process `A` uses up its total time slice, the scheduler lowers its priority.
+5. Periodically move all processes to the topmost priority *(priority boosting)*.
+This avoids starvation. We do this after every *boosting window* which can be,
+for example, 50ms
