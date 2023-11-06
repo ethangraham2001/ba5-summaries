@@ -443,6 +443,8 @@ allocate, we find a fitting object
 
 To free, we merge adjacent blocks.
 
+The heap is managed by a user-space library like `glibc`
+
 ### Interaction with OS
 The operating system gives the process a large memory region to store heap
 objects (`sbrk()`, `mmap()` syscalls to allocate memory).
@@ -463,3 +465,78 @@ int main(int argc, char* argv[])
 - **heap:** `*c`
 - **data:** `g` *(global variable)*
 - **text:** `main()` *(since it is code)*
+
+## Virtual Memory
+We give every process virtual memory. Addressing starts at `0x0`. Every virual
+address maps to a physical address, and the process resides somewhere else in
+physical memory.
+
+### Basic System Design Concepts
+
+- **Indirection:** use an intermediate layer to access/manipulate data/resources
+without directly interacting with them
+- **Batching:** Group operations together to amortize cost
+- **Caching:** Store data locally for faster access
+
+## Memory Management Unit
+Only the operating system is allowed to configure the MMU. We don't allow any
+processes to modify it, and we prevent this by allowing MMU to be managed only
+by processes running in ring 0.
+
+Exceptions in user space *(for example illegal memory accesses)* result in a 
+trap, switching to kernel mode, and being handled by the OS.
+
+### Simple MMU: Base Register
+Idea: translate every virtual address to physical address by adding an offset.
+We store this offset in a special register *(controlled by the OS, used by MMU)*.
+Each process has a different offset in their base register
+
+In this model, a process can still access memory associated to other processes.
+
+### Simple MMU *(but better)*: Base and Bounds
+Like in the previous example we add a base, but this time we also add bounds to
+prevent accessing illegal memory addresses. Pseudo code to illustrate:
+
+```c++
+if (addr < bounds)
+    return *(base + addr)
+else
+    throw new SegFaultException();
+```
+
+The pros of this method is that it is cheap *(performance)* and isolates processes
+*(security)*
+
+However, it completely rules out memory sharing, and wastes physical memory since
+it must all be allocated statically. It results in **memory fragmentation**,
+which is inefficient. 
+
+We define both internal and external fragmentation.
+
+- **Internal:** The allocated memory is slightly larger than the required memory,
+and some memory goes unused.
+- **External:** We have enough available memory in total, but it isn't contiguous
+and therefore we can't allocate it as desired *(good example on slide 61)*
+
+### MMU: Segmentation
+One base and bound register per memory area. This allows processes to have
+several regions of continous memory mapped from virtual address space to 
+physical address space. The OS can place segments independently anywhere in
+physical memory *(unlike for base and bound where memory must be contiguous)*
+
+As a result, we minimize memory waste.
+
+To share segments, we mark it using protection bits *(read, write, execute)*
+to let other processes know that it is shared.
+
+We define different segment types with different usages:
+
+- Code Segment $\rightarrow$ `CS` register
+- Data Segment $\rightarrow$ `DS` register
+- Stack Segment $\rightarrow$ `SS` register
+- User-defined extra segents $\rightarrow$ `ES`/`FS`/`GS` registers
+
+#### Issues
+Each segment must be backed by physical memory. Although fragmentation is 
+decreased, it still occurs since hardware needs to allocate enough physical memory 
+for every segment *(e.g. stack and heap still need to be large enough)*
