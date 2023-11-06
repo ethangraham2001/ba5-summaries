@@ -545,8 +545,204 @@ This consistency model is widely employed, since it is fast while remaining
 relatively easy to reason about. Most ISAs provide instructions that enfoce
 atomicity, *e.g.* `xchg` on x86 architecture.
 
-## Weak Consistency
+## Weak Consistency Intro
 Memory ops are classified either as data or synchronization. Only synchronization
 ops have any notion of ordering, whereas data ops have no enfored order among
 themselves. Synchronization ops are called `Fences`. This consistency model is
 used on ARM architectures.
+
+***
+# Week 06: Memory Consistency II
+
+## Some Consistency Models
+### Recall: Sequential Consistency 
+Sequential consistency is the strongest model.
+
+- Ensuring program order requires resolving addresses between ops *(using LSQ)*
+and managing speculation, only writing authoritative values *(combine ROB and SB)*
+- Ensuring atomocity requires explicit communication between all processors after
+every write operation.
+
+### Recall: Processor Consistency
+The simple idea is that we let indepent loads bypass the stores. The address
+resolution is taken care by the LSQ.
+
+### Arm Memory Model
+"ARM implements a weakly consistent memory model for normal
+memory. Loosely, this means that the order of memory accesses
+observed by other observers may not be the order that appears in
+the program, for either loads or stores."
+
+In plain english, be careful because you could see any order.
+
+## Language Level Consistency
+At the ISA level, loads and stores can have different purposes
+*(storing data that doesn't fit in registers, communication between cores, etc...)*.
+As a programmer, however, we don't want to have to think about ISA too much, if
+at all. Statements in a higher-level programming language don't always translate
+exactly into the ISA.
+
+### Problem: Register Allocation
+
+Consider the following example, which is how some programmers try to manage
+concurrency.
+
+Thread 0:
+```C
+// val = done = 0
+val = expensive_func();
+done = 1;
+```
+
+Thread 1:
+```C
+// done = 0
+
+while (!done)
+{
+    ... = val
+}
+```
+
+The compiler *(and many do this)* may detect `done` as loop-invariant and 
+compile it out of the loop like this: 
+
+Thread 0:
+```C
+// val = done = 0
+val = expensive_func();
+done = 1;
+```
+
+Thread 1:
+```C
+// done = 0
+
+tmp = done;
+if (!tmp) {
+    while (1)
+    {
+        ... = val
+    }
+}
+
+```
+
+To prevent register allocation, we can use the `volatile` keyword in C. This
+indicates that the value can change at any time, and that the compiler should
+disable register allocation and other optimizations.
+
+However, the processor still allows reordering here - what if we want to NOT
+reorder the lines :
+```C
+val = expensive_func();
+done = 1;
+```
+
+## Disallowing Re-ordering
+This previous problem is non-deterministic and completely compiler/architecture
+dependent. We can kill it with fences, but this kills cross-ISA portability
+which is no fun.
+
+Moreover, inserting ASM into C code defeats the whole point in having different
+levels of abstraction between the two. Example, using 
+```C
+asm volatile("mfence":::"memory");
+```
+
+We want to provide an end-to-end guarantee of program correctness. Challenge
+is to agree upon what a *correct* program is.
+
+## What Should We Guarantee?
+Sequential consistency is still the most intuitive model. However, what we choose
+to do is use sequential consistency only the places where the threads will 
+communicate. If we do this, we have to make sure that all parallelism is guarded
+using for example `#pragma omp critical` and similar. 
+$\rightarrow$ I only worry when I know someone else is going to use my data.
+
+## Selectively Enforce SC
+We add `fence`s, and prevent re-ordering across them. It ensures write visibility
+before the next operation. Basically says *"get your shit together"*.
+
+Programmers should write correctly synchronized code with no data races. Then,
+language, virtual machine and hardware, will **guarantee SC**.
+
+We call this ***data race free = SC***
+
+### Data Race
+Two conflicting memory operations from different threads occur simultaneously
+$\rightarrow$ have back-to-back accesses in any sequentially consistent interleaving.
+
+## Solving Data Races
+We used to add fences like this:
+
+```C
+int a = 1;
+_sync_synchronize();
+r_1 = b;
+print(r_1);
+```
+
+But now we use compiler directives like:
+
+```c++
+atomic int a = 0;
+```
+
+Which ensures atomicity and program order for you.
+
+### Before
+Needed to adjust programs based on ISA and consistency model of target architecture
+
+### Now
+As long as we follow the rules, $DRF \Rightarrow SC$ holds!
+
+## Java Memory Model: JMM
+Memory order in JMM is defined by *happens-before* relationships denoted by
+$\rightarrow$. This ensures that certain operations in a thread are visible to 
+other threads in a predictable way. For example, the `synchronized` notation
+from ParaConc.
+
+Imagine we have the following Java code
+
+```Java
+class SharedResource {
+    private int value = 0;
+
+    public synchronized void increment() {
+        value++;
+    }
+
+    public synchronized int getValue() {
+        return value;
+    }
+}
+```
+When $T_0$ calls `increment()`, it enters the `synchronized` block and increments
+`value` then exits. The *happens-before* relationship ensures that any modifications
+made by $T_0$ in the `synchronized` block are visible to other threads.
+
+Here are some salient "$\rightarrow$" relationships
+
+- Actions in the same thread $\rightarrow$ each other in program order
+- Unlocking a monitor $\rightarrow$ all locking operations 
+- Writing to `volatile` $\rightarrow$ all reads of that field
+- All actions in a thread $\rightarrow$ a `join()` on that thread
+- if `A_x` $\rightarrow$ `A_y` and `A_y` $\rightarrow$ `A_z`, then `A_x` $\rightarrow$ `A_z`
+
+If we can find two actions `A_x` and `A_y` such that
+
+- `A_x` does not $\rightarrow$ `A_y`
+- `A_y` does not $\rightarrow$ `A_x`
+
+then we have found a data race.
+
+In the Java memory model, any action sees **all** actions that $\rightarrow$ it.
+For example:
+
+- `rel(m)` $\rightarrow$ `acq(m)`
+- `acq(m)` $\rightarrow$ `rd(t)`
+- `rel(m)` $\rightarrow$ `wr(t)`
+
+In the slide 53 example. Where `acq(m)`/`rel(m)` are acquiring/releasing lock `m`
+respectively.
