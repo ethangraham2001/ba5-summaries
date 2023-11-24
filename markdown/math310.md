@@ -207,6 +207,11 @@ This implies that $\varphi(\mathbb 1_G) = \mathbb 1_H$ and that
 $\varphi(x^{-1}) = (\varphi(x))^{-1}$. A group homomorphism that is invertible
 is called a group ***isomorphism***. We say that two groups are isomorphic.
 
+Let $\varphi: G \rightarrow H$ be a group homomorphism. The 
+$\varphi(G) \subset H$ is called the ***image*** of $\varphi$.
+
+The set $\lbrace \varphi(g) \rbrace_{g \in G}$ is a subgroup in $H$.
+
 ## Generators of a group
 Generators of a group $G$ is a minimal set of elements of $G$ such that any
 element of $G$ can be written as a product of generators and their inverses.
@@ -216,7 +221,7 @@ Any equation satisfied by group elements is called a relation.
 
 ## Presentation
 A presentation of $G$ in generators and relations is an expression
-$\langle S | R \rangle where $S$ is a set of generators and $R$ is a minimal
+$\langle S | R \rangle$ where $S$ is a set of generators and $R$ is a minimal
 set of relations for the generators in $S$ such that any other relation in
 $G$ follows from these.
 
@@ -224,7 +229,7 @@ $G$ follows from these.
 
 ## Kernel of a Homomorphism
 The kernel of a homomorphmism $\varphi: G \rightarrow H$ is the set of elements
-$g\in G$ such that $\varphi(g) = \mathbb 1_H$
+$g\in G$ such that $\varphi(g) = \mathbb I_H$
 
 ### *proposition*
 Let $\varphi: G \rightarrow H$ be a group homomorphism. Then 
@@ -240,5 +245,121 @@ have $g h g^{-1} \in H$. We write $H \triangleleft G$.
 If $\varphi$ is a group homomorphism from $G$ to $H$, then
 $ker\,\varphi \triangleleft G$ is a normal subgroup.
 
+## Elliptic Curves and Lenstra's Factorization Algorithm
+An elliptic curve is a curve with the structure
 
+$$
+y^2 = x^3 + ax + b \textit{ over } \mathbb R \textit{ or } \mathbb Q
+$$
+
+The set of rational points on this curve has a group structure, with group
+law is $P + Q = -R$.
+
+1. The trivial element is a point $theta$ up at $\infty$
+2. $P + 0 = 0 + P = P$ for any point $P$
+3. $-P$ is the point symmetric w.r.t to the horizontal axis
+$P + (-P) + 0 = 0$
+4. If $P, Q$ are reflected w.r.t the horizontal axis, then $P + Q = 0$. If
+$P = Q$, then take the intersection of the tangeant line to the curve at $Q$,
+and find the intersection with the curve $\Rightarrow -2Q$. Otherwise, if
+$P \neq Q$, then take the line passing through $P$ and $Q$ and find the 
+third intersection $R$ with the curve $\Rightarrow P + Q = -R$
+
+### Integer Factorization with Elliptic Curves
+
+1. Pick an elliptic curve $y^2 = x^3 + ax + b$ over $\mathbb Z / n \mathbb Z$
+and a point $P(x_0, y_0)$.
+2. Compute $2P, 3!P, \dots, k!P$ for some integer $k > 0$. We note that
+$3!P = 3 \cdot 2P = 3(2P) = 2\cdot 2P + 2P$. This involves computing slopes
+modulo $n \Rightarrow \frac u v mod \, n$. This oly makes sense if $v$ is 
+invertible $mod \, n \Leftrightarrow gcd(u,v) = 1 \Rightarrow$ if the
+construction fails, then $gcd(u, v) > 1$ and you have found a nontrivial
+factor of $n$. This method gives factorization of $n$ sub-exponential time
+on $log \; n$
+
+
+## Dihedral Groups
+Group of rigid symmetries of a flat $n$-gon. Notation $D_n$
+Check slides for drawings.
+
+### Example
+$sr = r^{-1}s$ is a relation in $D_4$
+
+In general, the number of elements in $D_n$ is $2n$
+
+### Proposition
+$D_n$ admits a presentation in generators and relations.
+
+$$
+D_n = \langle r, s | r^n = 1, \, s^2 = 1, \, srs = r^{-1} \rangle
+$$
+
+## Quotient Groups: cosets with respect to a normal subgroup
+If $H \triangleleft G$ is normal, then the set of left $H$-coses in $G$
+naturally forms a group. Namely, define $(xH)(yH) = (xyH)$
+
+- $(\mathbb 1H)$ is the neutral element
+- $(x^{-1}H)$ is the inverse
+
+# Week 05
+
+## A Few Recalls
+
+1. A subgroup $H \triangleleft G$ is normal if $ghg^{-1} \in H$ 
+$\forall g \in G, \forall h \in H$
+2. A quotient group $G/H$ is a group of left costets wrt to a normal subgroup
+$H \triangleleft G$. Multiplication $(xH)(yH) = xyH$
+3. If $\varphi: G_1 \rightarrow G_2$ is a group homomorphism, then
+$ker\, \varphi \triangleleft G_1$ is normal in $G_1$
+4. Any subgroup $H\subset G$ is normal in an abelian group $G$
+$\forall h \in H, \forall g \in G \Rightarrow ghg^{-1} = hgg^{-1} = h \in H$
+5. The dihedral group is non-abelian.
+
+## Symmetric Group
+$S_n$ is the group of permutations of $n$ elements $\lbrace 1 \dots n \rangle$
+A permutation is an element of $S_n$; product by composition. Neutral element
+is the trivial permutation.
+
+## Cycle Notation for elements of $S_n$
+**Insight:** Interpret permutations as functions. Thus the group operation
+on $S_n$ becomes the function compotision $\circ$. Thus two permutations
+$f$ and $g$ compose to $f \circ g$. This is just a more compact notation.
+
+### Writing Cycle Notation
+Assume
+
+$$
+\begin{pmatrix}
+1 & 2& 3& 4& 5\\ 
+3 & 5& 4& 1& 2 
+\end{pmatrix}
+$$
+
+Let $\rho \in S_n$ and consider the subgroup 
+$\langle p \rangle = \lbrace 1, \rho, \rho^2, \dots, \rho^{k-1}\rbrace$. For
+$x \in \lbrace 1, \dots, n \rbrace$ we have
+
+$$
+\lbrace x, \rho x, \dots \rho^{k-1}x \rbrace = Orb_{\rho}(x)
+$$
+
+If 
+
+$$
+\rho^i x_1 = \rho^j x_2 then \rho^{i-j} x_1 = x_2 \Rightarrow
+x_2 \in Orb_{\rho}(x_1) \Rightarrow \rho^k x_2 \in Orb_{\rho}(x_1) \Rightarrow
+Orb_{\rho}(x_1) \subset Orb_{\rho}(x_2)
+$$
+
+
+And similarly
+
+$$
+Orb_{\rho}(x_1) \subset Orb_{\rho}(x_2) \Rightarrow 
+Orb_{\rho}(x_1) = Orb_{\rho}(x_2)
+$$
+
+## Definition
+$\pi \in S_n$ is a cycle if $\pi$ has just one nontrivial orbit with $>1$ 
+element. The length of its nontrivial orbit is the length of the cycle.
 
