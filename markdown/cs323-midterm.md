@@ -7,10 +7,6 @@ date: \today
 
 ***
 # Week 01: Introduction
-*(With Indian Accent)*
-
-OS's are cool and are used everywhere and all. Motherchod
-
 ## Hardware and OS
 Hardware does influenc OS design choices - hardware designers choose what
 abstractions to expose to the OS, and OS programmer uses what's available.

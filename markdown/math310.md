@@ -334,19 +334,75 @@ $$
 3 & 5& 4& 1& 2 
 \end{pmatrix}
 $$
+a permutation. To write this in cycle notation, we go through all elements,
+starting from $1$, and look where it maps. We don't need to go over $1$ again.
+We see where this next element maps, and iterate. We do this until we reach $1$
+again. In this example:
 
+$$
+1 \rightarrow 3 \rightarrow 4 \rightarrow 1 = (1 \; 3\; 4)
+$$
+
+We then continue with the next cycle, starting at the next element after $1$
+that hasn't yet been covered. In this case, $2$.
+
+$$
+2 \rightarrow 5 \rightarrow 2 = (2 \; 5)
+$$
+
+Therefore, we can write the original permutation as
+
+$$
+(1 \; 3\; 4) (2 \; 5)
+$$
+
+Every element of the permutation appears exactly once in this cycle product.
+
+A cycle of length $2$ is called a transposition. For example the case of 
+$( 2 \; 5)$. 
+
+### Composition of Cycles
+Assume that we have
+
+$$
+a = \begin{pmatrix}
+1 & 2 & 3 \\
+3 & 1 & 2 \end{pmatrix} \;\;\;
+b = \begin{pmatrix}
+1 & 2 & 3 \\
+3 & 2 & 1 \end{pmatrix}
+$$
+
+Then $a \cdot b = a \circ b$. So we "do $b$ first, then $a$". In cycle notation,
+we have $a = (1 \; 3\; 2)$ and $b = (1\;3)$
+
+- $1 \rightarrow 3$ in $b$, and $3 \rightarrow 2$ in $a$. Therefore
+$1 \rightarrow 2$ in $a \cdot b$
+- $2 \rightarrow 2$ in $b$, and $2 \rightarrow 1$ in a. Therefore
+$2 \rightarrow 1$ in $a \cdot b$ and we have our first cycle $(1 \; 2)$
+- $3 \rightarrow 1$ in $b$, and $1 \rightarrow 3$ in $a$. Therefore
+$3 \rightarrow 3$ in $a \cdot b$ and we have our second cycle $(3)$. We have
+finished.
+
+Thus $a \cdot b = (1 \; 2)(3) = (1\;2)$
+
+## Orbit
 Let $\rho \in S_n$ and consider the subgroup 
-$\langle p \rangle = \lbrace 1, \rho, \rho^2, \dots, \rho^{k-1}\rbrace$. For
+$\langle \rho \rangle = \lbrace 1, \rho, \rho^2, \dots, \rho^{k-1}\rbrace$. For
 $x \in \lbrace 1, \dots, n \rbrace$ we have
 
 $$
 \lbrace x, \rho x, \dots \rho^{k-1}x \rbrace = Orb_{\rho}(x)
 $$
 
+Put simply, $Orb_{\rho}(x)$ is all the places that $x$ can map to when we
+permute $\lbrace 1, \dots n \rbrace$ once or several times with permutation
+$\rho$.
+
 If 
 
 $$
-\rho^i x_1 = \rho^j x_2 then \rho^{i-j} x_1 = x_2 \Rightarrow
+\rho^i x_1 = \rho^j x_2 \text{ then } \rho^{i-j} x_1 = x_2 \Rightarrow
 x_2 \in Orb_{\rho}(x_1) \Rightarrow \rho^k x_2 \in Orb_{\rho}(x_1) \Rightarrow
 Orb_{\rho}(x_1) \subset Orb_{\rho}(x_2)
 $$
@@ -362,4 +418,12 @@ $$
 ## Definition
 $\pi \in S_n$ is a cycle if $\pi$ has just one nontrivial orbit with $>1$ 
 element. The length of its nontrivial orbit is the length of the cycle.
+
+## *proposition* Disjoint Cycles
+Two cycles $\rho$ and $\pi$ are in $S_n$ are disjoint if their nontrivial
+orbits do not intersect.
+
+**Disjoint cycles commute**.
+
+
 
