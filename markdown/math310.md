@@ -425,5 +425,35 @@ orbits do not intersect.
 
 **Disjoint cycles commute**.
 
+## *proposition* Every $k$-cycle is a product of $(k-1)$ transpositions
+We prove this with induction on $k$
 
+# Week 06
+Recally that any $\sigma \in S_n$ can be written as a product of disjoint
+cycles.
+
+## Sign of a Permutation
+**Theorem:** A product of an odd number of transpositions cannot be equal
+to a product of an even number of transpositions.
+
+**Definition:**
+$$
+sign(\sigma) = (-1)^{\text{number of transpositions in } \sigma}
+$$
+
+- $sign(\sigma) = 1 \Leftrightarrow \sigma$ even number of transpositions
+- $sign(\sigma) = -1 \Leftrightarrow \sigma$ odd number of transpositions
+
+We get that $sign(\sigma \cdot \tau) = sign(\sigma) \cdot sign(\tau)$ and that
+
+$$
+ker(sign) \triangleleft S_n \; \; ; ker(sign) = 
+\lbrace \sigma \in S_n: \; \sigma = \text{ product of even num of transpositions}
+\rbrace
+$$
+
+This is because the $ker$ of a homomorphism is a normal subgroup.
+
+## Conjugacy Class
+The Conjugacy Class of $h = \lbrace ghg^{-1 \rbrace_{g\in S_n}}$ is a 
 
