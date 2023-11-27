@@ -161,3 +161,18 @@ frequency value or else the starting point won't be configured correctly.
 The higher the frequency, the higher the accuracy. But this also means that
 we can't count for as long. We should always opt to choose the highest 
 frequency that counts for as long as we need.
+
+# Week 05 - Framebuffer Mode
+
+## Brief Introduction on the Graphics Subsystem
+
+### VRAM Banks
+In the DS, there are a total of 9 VRAM banks of different sizes; ranging from
+128KB down to 16KB.
+
+### Graphics Control Registers Used in Framebuffer Mode
+- `REG_POWERCNT`: Initialized with default settings on system boot
+- `REG_DISPCNT`: Configure graphics mode
+- `VRAM_x_CR`: Activate VRAM banks, and configure them
+
+
