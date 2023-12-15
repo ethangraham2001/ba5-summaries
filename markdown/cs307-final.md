@@ -1,8 +1,7 @@
 ---
 geometry: left=2cm, right=2cm, top=2cm, bottom=2cm
 title: CS307 Summary for Midterm
-author: Ethan Graham
-date: \today
+author: Ethan Graham date: \today
 ---
 
 # Week 01: Introduction
@@ -902,4 +901,142 @@ threads when you get here".
 3. Last thread sees `counter == num_threads`
 4. Set the flag, all threads leave.
 
+# Week 08 - Transactional Memory
+
+## Coarse Grained vs. Fine Grained Locking *(Hash Tables)*
+
+In this context, the coarse-grain implies locking at the bucket level, whereas
+fine-grained implies locking the individual elements. In general, finer
+locks leads to less contention as two threads accessing **the exact same**
+element is less probable than two elements accessing the same bucket.
+
+### Hand-Over-Hand locking
+To remove an element from a linked list, we need to have access to the element
+as well as the element that came before it $\rightarrow$ two locks.
+
+This can forbid threads from passing through these elements - although this
+scenario is fairly rare.
+
+## Hardware Lock Elision
+
+**Idea:** Let multiple threads execute the same critical section concurrenly,
+but speculatively. If the processor detects conflict, it rolls back and
+attempts to execute the critical section again. Helps mitigate the overhead
+related to acquiring and releasing locks.
+
+### Execution Example
+
+- Processor executes a speculative tes-and-set, which enters the pipeline.
+- Load returns a 0 for `lck`, which means lock-free.
+- **We cannot retire any instructions between `ts lck` and `st lck`**, as this
+would break the mutex.
+- If there is no intervening coherence traffic, we can drain the ROB.
+- When `st lck` retires, speculation is successful.
+
+If the first `ts lck` returns a `1`, we turn off lock elision. Start with
+`ts lck` again as usual and wait your turn.
+
+### Failure of Lock Elision
+
+HLE can fail due to resource retraints - what is the crititcal section contains
+more instructions than can be contained in the ROB? Interrupts can also make
+this fail (interrupts can change variables related to the critical section,
+or could abort the speculative execution).
+
+## Fine-Grained Locking: Priority Inversion
+
+Kick out low-priority processes from waiting in the queue when a high-priority
+process arrives.
+
+## Fine-Grained Locking. Convoying
+When the thread waiting for the lock gets put to sleep *(de-scheduled)*.
+
+## Declarative Atomocity
+
+Instead of writing locking code, which is a pain in the ass, simply tell
+the runtime to make a section atomic. Hardware transactional memory **HTM**
+does this.
+
+## Transactional Memory
+
+- **Atomocity:** Upon commit, all memory writes take effect at once. On abort,
+none of the writes take effect.
+- **Isolation:** No other processor can observe writes before commit
+- **Serializability:** Transactions seem to commit in a single serial order,
+although this exact order is not guaranteed.
+
+In this implementation, the outer border defines the atomicity boundary. This
+composes nicels, as the programmer only has to declare a global intent for
+atomicity *(atomicity transfer)*. The hardware doesn't need to know about
+the specific implementation.
+
+Consider
+
+```C
+atomic 
+{
+	// read objects
+	HashObj objA = tbl.get(keyA);
+	HashObj objB = tbl.get(keyB);
+	// update
+	objA.update(objA);
+	objB.update(objB);
+}
+```
+
+In intel Hashwell processors, the assembly code defines `xbegin` which
+symbolizes the beginning of an atomic transaction, `xend` which symbolizes
+the end, and `xabort` a software-initiated transaction abort *(used when
+processor detects a conflit, rolls back discarding any changes)*
+
+Assuming no conflicts occur, we record reads and writes between `xbegin` and
+`xend` and keep all speculative state in pipeline as before. On conflict,
+execute specified recovery code.
+
+### Execution Example
+
+*(starting at slide 77)*
+
+#### Example 1: Successful Execution
+When the first `xbegin` instruction arrives in the ROB, we start speculating.
+I can do anything I like until the `xend`. When this arrives, I can retire
+the entire critical section safely
+
+
+#### Example 2: Unsuccessful Execution
+
+This happens when, for example, we get a `st obj` miss. We have to wait until
+we get permission to modify the object. When a `BusInv` arrives, it means that
+another thread has modified this object, and we have to roll back. We jump
+to the recover routine
+
+## Final Notes On Transactional Memory
+
+Several decades of research have been conducted in this area - firstly
+implementing it in software and more recently in hardware. Software
+implementations were too slow to justify actually using it in practice, but
+Intel and IBM came along and made it happen in hardware.
+
+# Week 09: Multithreading
+Superscalar is great, but in practice IPC *(instructions per cycle)* tends to 
+be less than 1 due to data dependencies etc...
+
+A big problem is that **pipeline bubbles** decrease IPC
+
+## Pipeline Bubbles
+
+### Reason 1: Structural Hazards
+
+We cannot use more resources than what we have. If two different adds need to
+occur at the same time, they end up being serialized.
+
+### Reason 2: Branch Control Flow
+
+This is related to predicting branch direction so that we can keep fetching
+instructions. Waiting for the real direction introduces bubbles.
+
+### Reason 3: Data Dependences
+
+Data flows from one instruction to another. Cache prefetching only really works
+for trivial patterns *(which isn't always the case!*)
 
