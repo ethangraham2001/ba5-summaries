@@ -1,7 +1,8 @@
 ---
 geometry: left=2cm, right=2cm, top=2cm, bottom=2cm
 title: CS307 Summary for Midterm
-author: Ethan Graham date: \today
+author: Ethan Graham 
+date: \today
 ---
 
 # Week 01: Introduction
@@ -267,7 +268,6 @@ We make a really tall directory, instead of a really wide one.
 ## Notes on Sparse Directories
 ***TODO***
 
----
 # Week 04: Optimization
 What we want to do, knowing memory hierarchy, is maximize the number of L1
 hits, given that lower-level memory accesses are the biggest cause of bottlenecks.
@@ -772,7 +772,7 @@ mutex.
 We need to be careful when designing locks. An intuitive way would be to have 
 a single address in memory that threads can write to. When `lock = 1` the lock 
 is held, when `lock = 0` the lock is free. This causes a problem in concurrent
-systems however, as we have no guarantees on memory ordering $\righarrow$ both 
+systems however, as we have no guarantees on memory ordering $\rightarrow$ both 
 processes could write to the same address at the same time. This is why 
 atomicity is necessary for mutexes.
 
@@ -1039,4 +1039,50 @@ instructions. Waiting for the real direction introduces bubbles.
 
 Data flows from one instruction to another. Cache prefetching only really works
 for trivial patterns *(which isn't always the case!*)
+
+## Horizontal and Vertical Waste
+
+We define two different types of waste in this section; horizontal and vertical 
+
+- **Verical:** Whole cycle empty, nothing is issued. Common after long-latency
+events.
+- **Horizontal:** Unable to use full issue width. Software not exposing enough
+ILP for hardware.
+
+## The Multithreading Trade-off
+
+Multithreading **always** increases single-threaded latency, but increases 
+pipeline utilization and thus throughput.
+
+Additionally, having to store every an architectural state for every thread 
+*(registers, PC, stack, interrupt tables)* isn't free. Threads can also share 
+the memory hierarchy, which can lead to potential contention in the data cache 
+and instruction cache *(although this is mainly a problem in servers)*.
+
+## Coarse Grained Multithreading
+
+This involves switching to a new context on long-latency events. Pay a small
+cost to switch to a new context. Purely addresses vertical waste.
+
+**Critical Decision:** When should we switch threads? We should do this when 
+current threads utilization is about to drop *(e.g L2 cache miss)*
+
+## Fine Grained Multithreading
+
+The idea here is to cycle between threads periodically. We eliminate the switch
+time by keeping thread state *hot*. Much better for latency. 
+
+**Critical Decision:** None. 
+
+
+## Simultaneous Multithreading
+
+Most complicated solution yet. We read instructions from multiple threads in 
+the same cycle.
+
+**Critical Decision:** Fetch-interleaving policy. How do we decide which 
+threads fetch instructions? 
+
+Beyond 2 to 4 threads, the program dependencies end up limiting the benefit of 
+this style of multithreading. 
 
