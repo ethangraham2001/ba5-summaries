@@ -1,6 +1,6 @@
 ---
 geometry: left=2cm, right=2cm, top=2cm, bottom=2cm
-title: CS307 Summary for Midterm
+title: CS307 Summary for Final
 author: Ethan Graham 
 date: \today
 ---
@@ -1085,4 +1085,6 @@ threads fetch instructions?
 
 Beyond 2 to 4 threads, the program dependencies end up limiting the benefit of 
 this style of multithreading. 
+
+
 
