@@ -1088,7 +1088,7 @@ this style of multithreading.
 
 # Additional Notes from Exercises
 
-## Week 02
+## Exercises 02
 
 **Q4:** Name two differences between shared memory and message passing 
 models.
@@ -1103,7 +1103,7 @@ implemented for shared memory.
 - Shared memory is easier to program than message passing.
 - Shared memory is harder to scale than message passing.
 
-## Week 03
+## Exercises 03
 
 **Q1:** What is the main invariant of cache coherence? 
 
@@ -1125,7 +1125,7 @@ As multiple tags can have the same set-index bits, there can be many blocks
 that happen to map to the same set, which causes contention. Contention here
 refers to concurrent reads or writes to the directory.
 
-## Week 04
+## Exercises 04
 
 **Q2:** Are memory consistency models required in a single-core scenario?
 Is it possible to detect memory re-orderings in a modern out-of-order
@@ -1143,7 +1143,7 @@ consistent memory model. This model frees the programmer from worrying about
 memory re-orderings and fences in the program $\rightarrow$ gives the programmer
 control.
 
-## Week 05
+## Exercises 05
 
 **Q1:** Explain why TS locks cause high coherence traffic when multiple cores
 are trying to acquire a lock
@@ -1166,4 +1166,101 @@ store-conditional operation fails
 - `SC` instruction fails in $P_1$
 - The program running in $P_1$ jumps to the beginning of th loop and tries 
 again by issuing a new $LL$ instruction
+
+## Exercises 06
+
+**Q1:** Explain three problems with fine-grained locking, assuming that multiple
+threads are operating on a hash table where each entry points to a linked-list.
+
+1. Priority Inversion: Lower priority threads hold the locks, preventing
+higher priority threads from accessing them and progressing
+2. Convoying: Multiple threads are pre-empted by the scheduler to access the
+locks. This leads to a *queue* or *convoy* where threads are waiting to acquire
+the locks.
+3. Deadlocks/Livelocks
+
+### Deadlock
+
+$P_0$ has `lock_0` and needs `lock_1` to proceed. $P_1$ has `lock_1` and needs
+`lock_0` to proceed. They won't give up their locks since they need the others
+lock, thus we have a deadlock
+
+### Livelock
+
+Two people meet in a narrow corridor. They try and politely move aside to let
+the other move through, yet they both move in the same direction, and thus
+the other cannot pass.
+
+i.e. Two processors $P_0$ and $P_1$ try and change their state to accomodate
+to the other processor, yet in doing so they block the other once more.
+
+**Q2:** LL/SC vs. HLE
+
+Both protocols some cache coherence protocol to detect if another processor
+is accessing the same memory location. Where they differ is that LL/SC won't
+execute the critical section at all until acquiring lock, whereas HLE involves
+speculatively executing a critical section and rolling back if it detects that
+another thread has done so as well *(flushes instructions and tries again)*. 
+
+**Q3:** Failure Criteria for HLE
+
+- Memory access to the critical section by another processor is detected by
+the coherence protocol, violating atomocity.
+- Program's critical section is too large to fit in the ROB
+- Memory operations in the critical section conflict in the cache
+*(such as cache invalidations)*
+- Interrupt *(context-switch)*
+
+## Exercises 07
+
+**Q1:** Horizontal waste vs. Vertical Waste
+
+- Horizontal waste occurs when there aren't enough data independent instructions
+to fill the whole pipeline width, causing bubbles in the execution units. Casued
+by data-dependencies mainly
+- Vertical waste is when there is no instruction issues by the processor to 
+fill the pipeline length, causing the whole pipeline to stall. Caused by long
+latency events
+
+**Q3:** Coarse-grain multithreading vs. OS preemption
+
+- CGMT is done entirely in hardware. New Thread's context is loaded from on-chip
+memory and doesn't require any OS call for the switch.
+- OS preemption, the entire context is written back to memory and replaced with
+the new thread's context. OS preemptions are infrequent
+
+## Exercises 08
+
+**Q1:** GPU Steaming Multiprocessor vs. Superscalar CPU
+
+Both SM and Superscalar CPU fetch, decode and execute instructions. Both
+can operate on multiple data at the same time.
+
+- SM operates on multiple threads per warp, and CPU operates on multiple
+instructions in different execution units.
+- SM follows SIMT *(single instruction multiple threads)* where all threads
+execute the sam set of instructions. Performs context switching in hardware
+and keep a high number of contexts active. Allows software-managed caching
+with shared memory
+- Superscalar CPUs folow MIMD *(multiple instruction multiple data)* where
+the degree of parallelism is in the instructions. Keep a lmited number of 
+contexts in hardware. Only has hardware managed caching.
+
+**Q2:** What is thread divergence?
+
+Thread divergence occurs when a warp executes a branch, and thus different
+threads from that warm execute different instructions, violating the whole idea
+of the SIMT model. Lowers the performance of GPUs.
+
+**Q3:** GPU memory hierarchy
+
+- **Shared memory:** Shared by all threads in a single block. Explicitly managed
+- **Local memory:** L1 cache backs the local memory and an L2 cache backs the
+local and global memory.
+- **Global memory:** Graphics DDR memory shared by all threads across all 
+blocks.
+
+We can optimize performance by allocating shared memory for the frequently
+used data elements. Reduces overhead related to the high access latency of 
+global memory.
 
