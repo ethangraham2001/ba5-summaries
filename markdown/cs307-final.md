@@ -1086,5 +1086,84 @@ threads fetch instructions?
 Beyond 2 to 4 threads, the program dependencies end up limiting the benefit of 
 this style of multithreading. 
 
+# Additional Notes from Exercises
 
+## Week 02
+
+**Q4:** Name two differences between shared memory and message passing 
+models.
+
+- In shared memory, threads have the same virtual address space. In message
+passing, processes have different address space.
+- Communication between threads occurs implicitly through shared memory through
+load/store instructions, whereas it occurs explicitly in message passing 
+through communication primitives.
+- Synchronization is implicit in message passing but it must be expicitly 
+implemented for shared memory.
+- Shared memory is easier to program than message passing.
+- Shared memory is harder to scale than message passing.
+
+## Week 03
+
+**Q1:** What is the main invariant of cache coherence? 
+
+It provides the SWMR *(single writer, multiple reader)* invariant.
+
+**Q4:** Why are directories required, and what are the benefits of
+directory-based protocols? 
+
+Directories track cache blocks present in different private caches which
+we need for coherence protocol operations. They also allow us to send
+coherence messages only to the required caches instead of broadcasting to ALL
+of them $\rightarrow$ lowers bus bandwidth consumption.
+
+**Q5:** Why do sparse directories suffer from contention?
+
+Sprace directories ave more sets than present in caches, for which some
+tag bits are used as set-index bits *(we need this if we overprovision)*.
+As multiple tags can have the same set-index bits, there can be many blocks
+that happen to map to the same set, which causes contention. Contention here
+refers to concurrent reads or writes to the directory.
+
+## Week 04
+
+**Q2:** Are memory consistency models required in a single-core scenario?
+Is it possible to detect memory re-orderings in a modern out-of-order
+core while running only a single thread?
+
+Memory consistency models aren't requied for an in-order core as all
+instructions are executed in order.
+
+**Q3:** Define the **DRF = SC** model. What are its benefits?
+
+Data Race Free equals Sequential Consistency is a programming model that
+requires programmers to explicitly mark critical sections in a program.
+Compilers and hardware will then enforce an illusion of a sequentially 
+consistent memory model. This model frees the programmer from worrying about
+memory re-orderings and fences in the program $\righarrow$ gives the programmer
+control.
+
+## Week 05
+
+**Q1:** Explain why TS locks cause high coherence traffic when multiple cores
+are trying to acquire a lock
+
+When two or more cores issue `RMW` intructions, they attempt to acquire the 
+lock with intention to modify it. Because another core holds a modified lock,
+each `RMW` instruction issues a `BusRdX` to obtain a copy and invalidate
+other copies. Because the cores are constantly waiting to acquire the lock,
+every time they spin issue a `BusRdX` resulting in high coherence traffic on
+the bus.
+
+**Q4:** Assume two processors $P_0$ and $P_1$ attempt to issue store-conditional
+operations to the same memory address simultaneously. Assume that $P_0$ wins
+bus arbitration. Explain what changes occur in $P_1$ and why its 
+store-conditional operation fails
+
+- $P_0$ issues a `BusInv`
+- $P_1$ snoops the `BusInv` and invalidates its cache block
+- $P_1$'s cache controller clear the link register in $P_1$
+- `SC` instruction fails in $P_1$
+- The program running in $P_1$ jumps to the beginning of th loop and tries 
+again by issuing a new $LL$ instruction
 
