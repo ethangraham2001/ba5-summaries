@@ -1140,7 +1140,7 @@ Data Race Free equals Sequential Consistency is a programming model that
 requires programmers to explicitly mark critical sections in a program.
 Compilers and hardware will then enforce an illusion of a sequentially 
 consistent memory model. This model frees the programmer from worrying about
-memory re-orderings and fences in the program $\righarrow$ gives the programmer
+memory re-orderings and fences in the program $\rightarrow$ gives the programmer
 control.
 
 ## Week 05
