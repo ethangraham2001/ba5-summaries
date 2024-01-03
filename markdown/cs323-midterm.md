@@ -406,6 +406,7 @@ segment. In this example, we need to store `x` in the invocation frame of
 `func`.
 
 ### Example 2
+
 ```C
 int called(int a, int b)
 {
@@ -536,3 +537,4 @@ We define different segment types with different usages:
 Each segment must be backed by physical memory. Although fragmentation is 
 decreased, it still occurs since hardware needs to allocate enough physical memory 
 for every segment *(e.g. stack and heap still need to be large enough)*
+

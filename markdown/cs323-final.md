@@ -609,3 +609,272 @@ of which is waiting for a resource held by the next member in the chain.
 Note that imposing total ordering isn't easy; we generally settle with imposing
 partial ordering.
 
+# Week 11: IO
+
+There are a few common services that are in the form of IO *(Input/Output)*.
+Some of these are
+
+- Load programs and data from storage
+- Write data to a terminal or the screen
+- Read / Write packets from a network
+- Read data from input devices
+
+Different IO devices have different timescales. In general, IO interaction is
+orders of magnitude slower than something like an L1 cache reference.
+
+## Simplified Illustration of Hardware Interaction - Storage Devices
+
+The IO controller support IO devices and is responsible for handling their 
+requests. The OS handles device management and exposes a uniform interface to
+applications. The OS process all accesses to these devices by reading/writing
+to IO registers in hardware - this ranges from commands and arguments to reading
+status and results.
+
+$\rightarrow$ OS provides transparency to these hardware interactions.
+
+## Buses
+
+Buses are a common set of wires for communication among hardware devices, 
+plus protocols for carrying out data transfer transactions.
+
+In modern IO systems, interaction often happens over the PCI*(-e)* bus. The PCI
+packets sent over a PCI bus have header information.
+
+- PCI1: 4 GB/s bandwidth for 16 lanes
+- PCI5: 64 GB/s bandwidth for 16 lanes
+
+## High-level Description of a Canonical Device
+
+The CPU will interact with something called the **device controller** by writing
+to **device registers**. Device internals are completely hidden to users behind 
+abstraction. The device controller signals to the CPU either through
+**memory pollling** or with **interrupts**.
+
+### Protocol
+
+The following is some C-like pseudocode that illustrates device protocol at a 
+high level.
+
+```C
+// 1. spin while waiting for the device to be ready
+while (STATUS == BUSY);
+
+// 2. write data to DTA register
+*dtaRegister = DATA;
+
+// 3. Write command to CMD register
+*cmdRegister = COMMAND;
+
+// 4. spin while waiting for the command to execute
+while (STATUS == BUSY);
+```
+
+Note that we should set up the data ***before*** setting up the command
+register. To link with *EE310*, we should set up the interrupt service handler
+before enabling interrupts for that device in particular.
+
+### Interaction with CPU
+
+There are two main ways that the CPU can choose to interact with IO
+
+1. **Port-mapped IO:** CPU uses designated IO ports. Each device has one port
+assigned to it. x86, for example, has designated `in`/`out` instructions for
+device communication
+2. **Memory-mapped IO:** Hardware maps control registers into the physical 
+address space *(think NDS hardware for EE310)* and IO is accomplished via 
+`ld`/`st` instructions.
+
+Both of these are used in practice and are supported by various architectures.
+Memory-mapped IO is predominantly used in high-performance environments.
+
+### Problem with Synchronous IO
+
+In the high-level protocol illustrated above, we see clearly that precious
+CPU cycles are wasted while spinning on `while (STATUS == BUSY)`. An elegant
+solution to this is asynchronous interrupts. 
+
+- Inform the device of a request
+- Wait for a signal *(interrupt)* of completion
+
+Thus the OS waits for an interrupt instead of spinning. These interrupts are
+handled through a dispatcher - on interrupt arrival, wakeup a corresponding
+kernel thread that was waiting on it.
+
+## Polling vs. Interrupts
+
+Interrupts tends to handle unpredictable events well, but it comes with a 
+relatively high overhead associated to it. Polling, however, has low overhead
+but this comes at the cost of wasting CPU cycles in the case of infrequent 
+or unpredictable IO events.
+
+Real systems use a mix of polling and interrupts.
+
+- Interrupts allow overlap between computation and IO, and is mostly used for
+slow devices
+- Polling is used for short bursts or small quantities of data or for
+high-performance scenarios.
+
+### Livelock
+
+Similar to a deadlock - it is when a process starves and makes no progress yet
+the state is changing - we are stuck in a loop yet we never make any meaningful
+progress. 
+
+This is a problem in particular for interrupt-handled IO.
+As an example, think of a flood of network packets arriving. The system cannot
+react as the cost of handling every interrupt through context switches is too
+high. Network packets simply queue up or start getting lost.
+
+### Coalescing
+
+This is a possible optimization that involves batching responses *(waiting for
+additional requests to complete if necessary)* and sending them all at once.
+
+
+## DMA
+
+Disk transfers are slow and tedious. **Idea:** have a separate processing unit
+that deals only with these slow transfers. The CPU can tell it which data is
+needed, and then it handles all of the necessary bus transactions related to it.
+
+A DMA is a form of ***PIO*** which stands for programmed IO.
+
+### Interaction with DMA Controller
+
+1. Device triver is told to transfer disk data to buffer at address `X`
+2. Device driver tells disk controller to transfer `C` bytes from disk to
+buffer at `X`
+3. Disk controller initiates the DMA transfer
+4. Disk controller sends each byte to DMA controller
+5. DMA controller transfers bytes to buffer `X`, increasing memory address and
+decreasing `C` until `C`$= 0$
+6. When `C`$=0$, DMA interrupts CPU to signal that the transfer has completed.
+
+## Dealing with a Large Number of Devices
+
+The challenge here is that different devices have different protocols. In
+general, device drivers are divided into two pieces
+
+1. **Top Half:** Accessed in call paths from system calls, e.g. `open`/`close`/
+`read`/`write`
+2. **Bottom Half:** Communicates with the device; runs as interrupt routine.
+
+Device drivers are an example of encapsulation. Different device drivers adhere
+to a standardized API - OS only implements and supports APIs based on device
+class.
+
+We would like to have a well-designed API that accounts for the tradeoff between
+versatility and over-specialization.
+
+## Persistence
+
+### Storage Devices
+
+The commonly used storage devices come in two forms
+
+1. Magnetic disks which have a high capacity and low cost. They have block-level
+random access, but are slow for this. Streaming access performance relatively
+well.
+2. Flash Memory which has an intermediate cost, yet lower capacity than 
+magnetic disks. They perform reasonably well for block-level random access.
+
+#### Magnetic Disk Storage
+
+Disk is organized into regions of tracks with the same number of sectors/tracks.
+The disk has sector-addressable addresses, with each sector being 512 or
+4096 bytes.
+
+We can characterize disk latency as
+
+$$
+latency = \text{seek time} + \text{rotation time} + \text{transfer time}
+$$
+
+With the following approximate latencies
+
+- Seek: around 5 to 15 ms
+- Rotation: around 4 to 8 ms
+- transfer: around 25-50 microseconds
+
+```
+// TODO: Get back to this section before exam
+```
+
+## RAID
+
+Stands for Redundant Array of Inexpensive Disks. The idea is to build a logical
+system from many disks.
+
+### RAID 0
+
+The idea here is to *stripe* files across multiple disks. For example, even
+stripes go to disk 0 and odd stripes go to disk 1.
+
+- No redundancy of data *(no fault tolerance because no mirroring)*
+- Provides great performance *(cumulative bandwidth utilization)*
+- Total storage capacity is the sum of capacities of all disks
+- No data security
+
+This is mainly used for gaming and video editing *(HPC scenarios)*.
+
+### RAID 1
+
+Where RAID 0 fails to address data security, RAID 1 aims to address only data
+security.
+
+- Duplicate file blocks accross storage devices. Thus it deals great with disk
+loss, but doesn't actually handle corruption
+- Total storage capacity is only that of one disk
+- Performance: Only reads can be parallelized since a write requires data to 
+be written to all disks.
+- Very expensive
+
+This is primarly used in critical infrastructure involving sensitive
+information.
+
+### RAID 5
+
+We store different parity *(a mechanism for fault tolerance)* in different
+drives, allowing us to reconstruct data from a failed disk by XOR-ing all 
+remaining drives. ***(check slides page 54 for illustration)***.
+
+- Reliable: Still works even if we lose a disk
+- Affordable
+- Used in datacenter environments
+
+### RAID 01
+
+This is a combination of two stripes (RAID 0) that are mirrored (RAID 1)
+
+```
+        R1
+    ____|____
+    R0      R0
+   / | \  / | \
+ D0 D1 D2 D3 D4 D5
+```
+
+During rebuild *(which happens if a disk has failed)*, no other drive from the 
+alternate group can fail. In this example, if D0 fails, D3, D4, D5 failing
+causes the whole system to halt. If D0 fails and D3 fails, the system is dead.
+
+
+### RAID 10
+
+Stripe (RAID 0) of a set of mirrored drives (RAID 1).
+
+```
+            R0
+    ________|________
+    R1      R1      R1
+  / | \   / | \   / | \
+D0 D1 D2 D3 D4 D5 D6 D7 D8
+```
+
+Of each mirror, at least one disk must remain healthy.
+
+If D0 fails and D1 fails, the system is dead. If D0 fails, then any other disk
+with the exception of D1/D2 can fail without impact.
+
+
+
