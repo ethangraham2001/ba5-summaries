@@ -351,7 +351,7 @@ cas(int *ptr, int expected, int new_val)
 }
 ```
 
-Where test-and-swap always updates the old actual value at `*ptr`,
+Where test-and-set always updates the old actual value at `*ptr`,
 compare-and-set only does this if the value corresponds to an expected old
 value.
 
@@ -390,5 +390,222 @@ time that the lock is released. We can do this in a couple of ways
 the lock.
 - Selectively wake up one threads from the queue, ensuring fairness.
 
+# Week 10: Deadlocks and Semaphores
 
+## Condition Variable
+
+The condition variable allows for threads to wait for a certain condition before
+they proceed. They are often used with a lock to safely check and wait for
+certain conditions.
+
+### Example: Signaling to the parent process that a child process has exited
+
+The simple approach would be for the parent to spin on a shared variable while
+waiting for the child to terminate *(setting the shared variable)*.
+
+What we can do here is implement that mechanism with a conditional variable.
+
+- Threads put themselves in a waiting queue when a condition isn't met, and
+then wait for the condition to be satisfied.
+- Threads leave the queue when the conditions are met.
+
+## Conditional Variable API
+
+We define a `condition_type c` which represents a condition on which threads
+wait and signal.
+
+The API itself is structured as follows
+
+- `wait(c)`: Wait until a condition is satisfied
+- `signal(c)`: Wake up one waiting thread
+- `broadcast(c)`: Wakes up all waiting threads
+
+These correspond to the following POSIX-specific definitions
+
+- `pthread_cond_t c` $\equiv$ `condition_type c`
+- `pthread_cond_wait(pthread_cond_t *c, pthread_mutex_t *m)` $\equiv$
+`wait(c)`
+- `pthread_cond_signal(pthread_cond_t *c)` $\equiv$ `signal(c)`
+
+### Revisiting Example
+
+This relates to the previous example related to a child process signaling to 
+the parent process that it has exited. We can implement this in the following
+way:
+
+```C
+// initialize mutex and CV
+pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+Pthread_cond_t c  = PTHREAD_COND_INITIALIZER;
+// ...
+void*
+child(void *arg)
+{
+    pthread_mutex_lock(&m);     // acquire mutex for `done`
+    done = 1;                   // write to shared variable atomically
+    pthread_cond_signal(&c);    // signal waiting threads that it is over
+    pthread_mutex_unlock(&m);   // release mutex for `done`
+    return NULL;
+}
+
+int
+main(int argc, char *argv[])
+{
+    // ...
+    pthread_mutex_lock(&m);     // acquire mutex for `done`
+
+    // go to sleep and wait if other thread hasn't finished with `done`
+    while (done == 0)               
+        pthread_cond_wait(&c, &m);
+
+    pthread_mutex_unlock(&m);   // release mutex for `done`
+
+}
+```
+
+Note that the `pthread_cond_wait(&c, &m)` which takes as parameter both the
+CV as well as the mutex ***releases the lock and puts the calling thread to
+sleep atomically***.
+
+### Question: Do we need a state variable `done`?
+
+Suppose that the child *(from before)* runs immediately. It acquires the lock,
+and issues a signal. However, in this situation, no thread is asleep on the
+condition to receive the signal. When the main thread executes, it will call
+`pthread_cond_wait()` and be stuck on it forever as there is no thread to
+wake it up! 
+
+### Question: Do we need a lock? 
+
+Suppose the main thread checks for `done`. Right before `pthread_cond_wait()`,
+main thread is switched out for the child thread. The child thread sets
+`done = 1`, and then calls `pthread_cond_signal()`. After this, we switch 
+back to the main thread, which waits forever on `pthread_cond_wait()` as there
+is no thread to wake it up *(child thread has already signaled and exited)*.
+
+### Question: Can we replace `while (done == 0)` with `if (done != 0)`?
+
+If there are only two threads present, this isn't an issue. It will, however,
+be an issue if there are more than two threads present.
+
+### Guidelines for CV
+
+- Always use `wait` and `signal` while holding the lock on a condition
+- Whenever a thread wakes up, recheck the state to avoid race conditions
+
+## Semaphore
+
+A semaphore is very similar to a condition variable, except that it is an object
+with an integer value as internal state. This means that a semaphore with binary
+values `0` and `1` acts the same as a simple spinlock.
+
+Three routines initialize and modify the semaphore object 
+
+- `sem_init(s, v)`: define the capacity *(number of slots)* of the resource.
+- `sem_wait(s)`: waits until the semaphore has at least one slot and decreases
+the slot count by 1 when slots are available. This means that execution of the
+caller is suspended in the case that the slot count is negative.
+- `sem_post(s)`: increments the slot count by 1, and wakes up suspended threads.
+
+We note that the slot count is not visible to callers.
+
+### Semaphore Example
+
+```C
+sem_t sem;
+sem_init(&sem, 0, X);   // initialize sem to X. In binary example, should be 0
+
+sem_wait(&sem);
+// Critical Section
+sem_post(&sem);
+```
+
+## Bugs in Concurrent Programs
+
+### Atomicity Violation Bugs
+
+This happens when a sequence of operations that are intended to be executed
+atomically are interrupted - allowing other operations to interleave and
+leading to inconsistent of unexpected states in a progra.
+
+```C
+// THREAD 1
+if (thd->proc_info != NULL)
+{
+    // ...
+    fputs(thd->proc_info, ...);
+    // ...
+}
+
+// THREAD 2
+thd->proc_info = NULL;
+```
+
+`thread_1` can execute the `NULL` check, and then `thread_2` can set the value
+to `NULL` before `thread_1` has executed `fputs()`.
+
+***Solution:*** Use a common lock between threads when accessing a shared
+resource.
+
+### Order Violation Bugs
+
+This occurs when the expected sequence of operations is not followed due to
+incorrect program execution order, leading to incorrect program behavior.
+
+```C
+// THREAD 1
+void
+init() 
+{
+    mThread = PR_CreateThread(mMain, ...);
+    mThread->State = ...;
+}
+
+// THREAD 2
+void 
+mMain()
+{
+    mstate = mThread->State;
+}
+```
+
+Here, `thread_2` assumes that `mState` is already initialized and not `NULL`.
+If `thread_2` runs before `thread_1`, the program will crash due to the
+dereferencing of the `NULL` pointer.
+
+***Solution:*** Use a condition variable to signal that `mState` has been
+initialized.
+
+### Deadlock
+
+This happens when two or more processes are unable to proceed with their
+execution because each one is waiting for the other to release a resource
+they need.
+
+```C
+// THREAD 1
+pthread_mutex_lock(&l1);
+pthread_mutex_lock(&l2);
+
+// THREAD 2
+pthread_mutex_lock(&l2);
+pthread_mutex_lock(&l1);
+```
+
+Several conditions can cause this behavior...
+
+1. Mutual Exclusion: Threads claim exclusive control of resources that they
+require
+2. Hold and wait: A thread must be holding at least one resource and waiting
+to acquire additional resources that are currently being held by other threads
+3. No preemption: Resources cannot be preempted; that is, resources cannot be
+taken away from a thread unless the thread voluntarily releases them
+4. Circular wait: There must be a circular chain of two or more threads, each
+of which is waiting for a resource held by the next member in the chain.
+
+***Solution:*** Impose total ordering + obtain all resources or nothing at once
++ release held resources if not all available at the same time
+
+Note that imposing total ordering isn't easy; we generally settle with imposing
+partial ordering.
 
