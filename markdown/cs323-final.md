@@ -876,5 +876,284 @@ Of each mirror, at least one disk must remain healthy.
 If D0 fails and D1 fails, the system is dead. If D0 fails, then any other disk
 with the exception of D1/D2 can fail without impact.
 
+## Summary of All This
+
+Try and hide low-level implementation with high-level abstraction - as the OS
+tries to do in general.
+
+
+# Week 12: File Systems
+
+## File System Abstraction
+
+Addresses in a file system are needed for long-term information storage (lots
+of it) in a way that outlives the program and can support concurrent accesses
+from multiple processes. It presents itself to applications with **persistent
+and named** data. The two main components are ***files*** and ***directories***.
+
+## File Abstraction
+
+A file is a **named** collection of related *(stored as binary)* information
+that is recorded in secondary storage, or simple a linear persistent array of
+bytes. It has two components
+
+- **Data:** What the user or application stored in it
+- **Metadata:** information added and managed by the OS such as size, security
+information, modification time, etc...
+
+There are three different perspectives that we can have of a file
+
+1. Inode and device number *(persistent ID)*
+2. File name *(human readable)*
+3. File descriptor *(process view)*
+
+Modern file systems mostly use untyped files - just a sequence of bytes. They
+done understand or care about the file contents.
+
+### Inode
+
+This is a low-level UID assigned to the file by the file system. Inodes are 
+unique in a given file system, but not generally unique globally. Each file has
+exactly one associated inode, and it contains associated metadata. They are
+recycled after deletion. Inode number is required to access file content.
+
+Multiple files can map to the same inode *(such as shortcuts in Windows)* - 
+we call this hard linking. 
+
+#### Inode Table
+
+Storage space is divided into inode table and data storage, with the inode table
+sitting at the beginning of the storage media *(mostly the initial block)*.
+
+### File Name
+
+Each file has a human readable format which we call file name. A directory
+stores the `filepath` $\rightarrow$ `inode` mappings.
+
+### File Descriptor
+
+The combination of file name and inode/device IDs are sufficient to implement
+persistent storage. The drawback is that constant lookups in the directory is
+costly.
+
+***Idea:*** Perform the expensive tree traversal once, and store the inode
+and device ID in a **per-process table**. This table also keeps additional
+information such as file offset.
+
+File descriptors are *linear integer values* that can be reused when freed.
+
+
+File descriptors 0, 1 and 2 are mapped to `STDIN`, `STDOUT` and `STDERR`
+respectively.
+
+## Directory Abstraction
+
+A directory is a special file that stored the mapping between human-friendly
+names of files and their inode numbers. A directory can contain subdirectories,
+thus a directory can itself be a list of files and other directories. The path
+`/` indicates the root of the file system *(in UNIX anyways)*. Everything is
+built like a tree that stems from `/`.
+
+### Links
+
+Links are file pointers - they do not contain any data themselves but reference
+another file.
+
+### Hardlinks
+
+Maps a file's path to a file's inode number. Basically mirror copy of the
+original file. Same inode number as the original file.
+
+Hard links are generally used when we want multiple files in different
+directories to all point to the same physical file on disk. Changes on the
+original file are reflected on all hard links.
+
+### Soft Links / Symbolic Links
+
+Logically maps a file's path to a different file path. Actual link to the
+original file - a new inode number is allocated when we use a soft link.
+
+Symbolic links are generally used as shortcuts to simplify filepaths. They can
+be hotswapped, allowing for configuration changes by just changing where the 
+symbolic link points to.
+
+### Permission Bits
+
+We can set `rwx` bits for owner, group, and everyone.
+
+## File System API
+
+File operations are generally performed, in C, using `<unistd.h>` which provides
+an API for doing so, including `open()`, `close()`, `read()` and `write()`.
+
+### C Example
+
+```C
+int fd;
+// Open file in write only, create file if it doesn't exist
+fd = open("example.txt", O_WRONLY | O_CREAT, 0664);
+
+if (fs < 0)
+{
+    perror("Error opening the file...\n");
+    return 1;
+
+    // write data
+    const char *text = "Hello, file\n";
+    write(fd, text, strlen(text));
+
+    // free file descriptor
+    close(fd);
+}
+```
+
+We also get further APIs such as
+
+```C
+// sets offset within file. Initially set to 0 and updated on read/write
+off_t lseek(int fd, off_t offset, int whence);
+
+// unlinks / deletes a file
+// removes a file from directory when reference count is 0
+int unlink(const char *pathname);
+
+// Synchronous write. Flushes all dirty data to file
+int fsync(int fd);
+
+// get file metadata
+int fstat(int fd, struct stat *statbuf);
+
+```
+
+## Multiple File Systems
+
+In Windows *(cringe)* different file systems are assigned a different 
+A - Z letter value.
+
+In Linux/UNIX, file systems are all mapped in a single tree. For example,
+`/home` can be a separate filesystem from `/bin`. **Mounting** allows for
+multiple volumes to form a single logical hierarchy. Very nice.
+
+## File System Implementation
+
+We've talked about the abstraction, now let's talk about the actual 
+implementation.
+
+The file system manages data for users. It is given a large set of $N$ blocks,
+and it needs to create data structures that can encode the file hierarchy
+and per file metadata. The memory overhead *(metadata vs. file data)* should be
+low, the internal fragmentation should be low, and the accesses of file content
+should be efficient. All this while implementing the standard file system APIs.
+
+### Layout
+
+The file system is stored on disk, which is partitioned. Sector 0 of the disk
+is reserved for the ***Master Boot Record (MBR)*** containing
+
+- Bootstrap code *(loaded and executed by firmware)*
+- Partition Table *(addresses where partitions starts and end)*
+
+The first block of each partition is called the ***boot block*** which is loaded
+by executing MBR code.
+
+As mentioned, persistent storage is modeled as a sequence of $N$ blocks with
+some fixed size of 4KB for example. They are generally assigned in the 
+following sort of way
+
+- 2 metadata blocks `0-1` for boot block and super block.
+- 2 metadata blocks `2-3` for inode and data bitmap *(tells us which blocks 
+are free. Free lists)*
+- 5 metadata blocks `4-8` for inode array *(256 bytes, 16 per block. 
+In this example, we can have a total of 80 files)*
+- 55 data blocks `9-63` can store the data
+
+### FS Superblock
+
+There is one logical superblock per file system which stored all metadata
+associated to the filesystem.
+
+- Number of inodes
+- Number of data blocks
+- Where the inode table begins
+- May also contain information related to managing free inodes and data blocks
+
+This is the first thing that is read when mounting a file system.
+
+### File Allocation
+
+There are various way to allocate data to files.
+
+- Contiguous allocation: all bytes together in order
+- Linked structure: block ends with a `next` pointer
+- File Allocation Table *(FAT)*: a table that contains block references. 
+This was used in Lab 4.
+- Multi-level indexing: tree of pointers
+
+Different approaches have different tradeoffs. It all depends on fragmentation,
+sequential access vs. random access, metadata overhead, tailoring to large or
+small files, and the ability to adjust file size.
+
+#### Contiguous Allocation
+
+All data blocks of a file are allocated contiguously. Very simple to implement
+since only required metadata for reading is start block and file size. Very
+efficient as one seek allows for us to read the whole file. However, it can
+lead to serious external fragmentation and even more inconvenient, we need to
+know file size at the time of creation.
+
+This is great for read-only file systems like CD/DVD/BluRay.
+
+#### Linked blocks
+
+This is great because there is no external fragmentation, and simple to
+implement as we only need to find the first block of the file and the rest
+will follow. Random access here is slow because there is a high seek cost on
+disk *(remember the latency related to rotating to seek new blocks on magnetic
+disks)* since data isn't stored contiguously. In terms of implementation, we
+need each block to contain both data and metadata - this also introduces
+storage overhead as a `next` pointer is required for each block.
+
+#### FAT
+
+The insight here is to decouple data and metadata - we keep the linked list in
+a single table *(Lab 4 woohoo)*. This was proposed by Microsoft in the late
+70s.
+
+We get great space utilization here *(no external fragmentation)* and decoupling
+of data and metadata. Simple implementation once again as we only need to find
+the first block of the file for the rest to follow. Performance-wise, we get
+pretty bad random access *(as for linked structure, non-contiguous blocks can
+introduce latency for storage media)*. 
+
+We also limit outselves in terms of 
+metadata - we get many file seeks unless the whole FAT is stored in memory. 
+Imagine as an example that we have 1TB $= 2^{40}$ bytes on disk and 4KB block
+size. This means that the FAT must have 256 million entries $\rightarrow$
+at 4B per entry in FAT32, we get 1GB of required memory for FS. Not practical.
+
+#### Multi-level Indexing
+
+Idea here is to have a mix of direct, indirect, double indirect, and triple
+indirect pointers for data.
+
+Each file is a fixed, asymmetric tree with fixed-size data blocks e.g 4KB as
+its leaves. The root of the tree is the file's inode which contains metadata
+and a set of 15 pointers
+
+- first 12 pointers point to data blocks
+- last three point to intermediate blocks, themselves containing pointers
+    1. number 13 points to a block containg pointers to data blocks
+    2. number 14 double indirect pointer
+    3. number 15 triple indirect pointer
+
+The tree-like structure makes it efficient for finding blocks. It is efficient
+for sequential reads as once an indirect block is read, it can read 100s of
+data blocks. The fixed structure makes it simple to implement and its 
+asymmetric structure allows for the support of large files and small files
+don't have to pay a large overhead.
+
+We get a reasonable read cost and low seek cost, but the small amount of
+metadata requires extra reads for indirect/double indirect access.
+
 
 
