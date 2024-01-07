@@ -952,7 +952,7 @@ A directory is a special file that stored the mapping between human-friendly
 names of files and their inode numbers. A directory can contain subdirectories,
 thus a directory can itself be a list of files and other directories. The path
 `/` indicates the root of the file system *(in UNIX anyways)*. Everything is
-built like a tree that stems from `/`.
+built like a tree that stems from `/`. The root directory has inode number 2.
 
 ### Links
 
@@ -1155,5 +1155,206 @@ don't have to pay a large overhead.
 We get a reasonable read cost and low seek cost, but the small amount of
 metadata requires extra reads for indirect/double indirect access.
 
+***Example:***
 
+Suppose we have a 4KB file size.
+
+If we access through direct pointers, maximum file size allocation is 4KB.
+
+If we access through 3-level indexing, we need end up with 4KB.
+
+- A triple indirect pointer
+- A double indirect pointer
+- An indirect block
+- the 4KB data block.
+
+Reading data requires 5 blocks to traverse the tree.
+
+# Week 13: Journaling
+
+We start by recalling file systems, and introducing some implementation.
+
+## File Operation: Reading from a File
+
+Firstly, we know that the inode of `/` *(root)* is 2. When we call
+`open("/cs323/w13/", O_RDONLY)`, what we do is traverse the directory tree
+until we get to the inode "w13. We then read the inode, perform a permission
+check, and return a file descriptor. Then for each subsequent `read()`,
+
+- read inode
+- read appropriate data block *(depends on offset)*
+- Update lass access time in inode metadata
+- Update file offset in in-memory open file table for the file descriptor.
+
+## File Operation: Writing to a File
+
+Again, we must open the file before we can perform any actions. In this case,
+we call `open("/cs323/w13", O_WRONLY)`. When we write, we may need to allocate
+new blocks! This means that each write can generate up to five I/O operations:
+
+1. Reading the free data block bitmap
+2. Writing the free data block bitmap
+3. Reading the file's inode
+4. Writing the file's inode to include a pointer to the new block
+5. Writing the new data block
+
+If the directory is full, we must allocate new blocks.
+
+## Performance
+
+### Characterizing Performance
+
+We can define performance based on some of the following metrics
+
+- Number of I/O operations
+- Speed of individual I/O operation
+- Impact on one program
+- Impact on all programs
+
+The key metrics are:
+
+- Latency
+- Throughput
+- I/O operations per second ***(IOPS)***
+
+### Improving Performance
+
+- **Caching:** Avoid unnecessary operations
+- **Batching:** Group operations to increase throughput *(could increase
+latency)* and delay idempotent operations *(doesn't change after the first 
+application)*
+- **Add a level of indirection:** Maintain some nice abstraction, enables
+performance optimization.
+
+#### Block Cache
+
+When an OS reads the associated block of an inode many times, it may be 
+cached in the ***file system buffer cache***. This is a map 
+`{ (inode, block_offset): page_frame }`. The `read()` can return without
+performing disk I/O.
+
+This cache sits in memory wherever there is free space. This can utilize all
+unused memory in newer systems.
+
+This being said, caching blocks does affect data persistence 
+*(we can lose data)*. Caching works
+great for `read()`s, but it gets tricky for `write()`s. We can write
+synchronously, but as we discuss in a paragraph lower down, this isn't good
+for performance. *(ideally we want to delay writes and perform them 
+asynchronously )*. We come back to this in crach consistency.
+
+#### Batching Operations
+
+I/O is high latency with limited concurrency. Idea is to batch operations
+together, allowing for fewer memory operations but that each have large sizes.
+This is possible when consecutive blocks on disk belong to the same inode.
+
+We introduce the notion of disk fragmentation, which is a metric that describes
+the fraction of inode content on non-consecutive disk locations.
+
+#### Delaying Operations
+
+A process needs to block on a `read()` as it must wait for the data to be
+available to it. We don't need to do this for writes. The idea is to delay all
+write operations, performing them asynchronously and reorder them to maximize
+throughput. The tradeoff is that content will be lost if the OS crashes -
+this is because memory operations aren't immediately commited to main memory.
+
+## Crash Consistency
+
+We start by illustrating with an example why consistency in the event of a crash
+is important.
+
+### Example: Updating a Block in a File System
+
+Suppose we append a new data block to a file.
+
+- We add this block `D2`
+- We then update the associated `inode`
+- We then update the data bitmap
+
+Note that these are all individual writes to the file system. If a crash happens
+between any of these operations, the file system will be corrupted. This could
+mean any of the following, bearing in mind that the writes could be executed
+out of order.
+
+- Inconsistent data/metadata structures *(we write data, but we've given the
+file system no way to access it by updating metadata)*
+- Inconsistent bitmap state *(marks block as free when it isn't)*
+- Inconsistent Data *(if the inode and bitmap updates succeed but the data isn't
+written to disk)*
+
+Our goal, ultimately, is to ***atomically*** move file system from one
+consistent state to anoher consistent state.
+
+### Possible Consistency Solution: File System Checker
+
+After a certain number of mount operations, or after a crash, check the
+consistency of the file system. This can perform hundreds of consistency checks
+across different fields, including but not limited to
+
+- Do superblocks match?
+- Is the filesystem size "reasonable"
+- Are link count equal to the number of directories?
+
+The program `fsck()` has been around since the old UNIX days, and is an example
+of a file system checker. Severity of file system corruption led to the phrase
+"fsck'ed".
+
+To summarize: Given a file system in consistent state A and a set of writes,
+check the resulting state B for correctness.
+
+### Possible Consistency Solution: Journaling
+
+The goal here is to limit the amount of work required after a crash, and to
+get correct state instead of just consistent state.
+
+The approach that we take is to turn muliple disk updates into a single write.
+To implement this, we *write ahead* a short note to a *log* specifying any
+changes that will be made to the file system's data structures. If a crash
+occurs while updating these aforementioned data structures, we can consult the
+log to determine what fscked up, and what to do. This prevents us from having
+to rescan the while disk.
+
+We keep a logbook to maintain significant events, decisions or changes in
+course. This basically keeps an archive of the state of the file system at 
+different points in time. We can reference this when something goes wrong.
+
+This journal is stored in a special area on disk that stores data in a 
+write-ahead fashion. We call it write-ahead logging.
+
+Journaling uses the transactions' atomicity to provide crash consistency
+*(recall cs307)*.
+
+## Principles of Transactions
+
+We spoke about the three rules of atomicity at the cache-level in cs307 that
+were *borrowed* from databases and file systems. There is an additional rule
+that is applied to file systems.
+
+1. Atomic: all or nothing
+2. Consistent: Brings the system from one correct state to another
+3. Isolated: Actions, from their point of view, appear to be the only
+entity accessing the resources; they never interfere with each other.
+4. Durable: Once completed, effects are persistent.
+
+We call these **ACID** principles sometimes because catchy. 
+
+## Modern File Systems
+
+Multi-level indexing was introduced back in early UNIX days. The early 1990s
+saw the introduction of log-structures file systems. The insight was that
+because of caching and increased memory sizes, most I/O is mainly writes - not
+reads.
+
+Today, modern file systems leverage ideas from log-structures file systems
+for metadata operations. An example is ext4 on linux.
+
+### Log Structured File System - Philosophy
+
+Instead of adding a log to the existing disk, use an entire disk as a log.
+In here, we buffer all updated *(including metadata)* into an in-memory
+segment. When a segment is full, write the disk in a long sequential transfer
+to unusued parts of the disk. We never overwrite existing data - only write a 
+set of data blocks or segmets to a free location. This improves disk throughput.
 
