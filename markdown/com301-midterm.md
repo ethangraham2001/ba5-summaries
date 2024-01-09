@@ -89,6 +89,7 @@ require secrecy.
 **Linus' Law:** Given enough eyes, all bugs are shallow.
 
 ## 5. Separation of Privilege
+
 No single accident, deception, or breach of trust is sufficient to compromise
 the protected information.
 
