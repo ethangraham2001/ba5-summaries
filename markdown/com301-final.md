@@ -163,8 +163,378 @@ magic - for example, how do we keep integrity of logs? Moreover, a log doesn't
 mean that we can reliably recover from an attack. Logs may contain sensitive
 information themselves.
 
-# Discretionary Access Control *(DAC)*
+# Week 03 - Discretionary Access Control *(DAC)*
 
 This is act of verifying that every action respects the security policy under
-the presumption that is every action respects it, then the system is secure.
+the presumption that if every action respects it, then the system is secure
+within the threat model.
+
+Given a tuple `(principal, object, action)`, an access control mechanism returns
+either `authorized` or `unauthorized`.
+
+Both authentication *(seen later on in the course)* and access control are key
+mechanisms - thus they must be placed inside the TCB.
+
+## Implementation
+
+Don't do check soup
+
+```C
+if ( action == read && (userID == "Alice" || userID == "Bob") )
+{
+    // do thing...
+}
+// ...
+```
+
+This is prone to errors, is difficult to debug, and is hard to modify down the
+line.
+
+What should be done is systematic calls to a reference monitor - all programs
+should check this when requiring access control. This violates the least common
+mechanism principle, but fulfils the economy of mechanism principle as well
+as complete mediation.
+
+## DAC vs. MAC
+
+In DAC, the object permissions are decided by the owner of the object - this
+works well since users generally own objects. As object-count grows, so does
+complexity. To address this, we usually let users pick between a set of options.
+
+In MAC, the decision is made by a central authority, and is generally a
+system-wide policy. Used by organizations mainly. Depending on needs, the focus
+can be placed on, for example, confidentiality or integrity.
+
+## Implementing DAC
+
+### Access Control Matrix
+
+Abstract representation of all permitted triplets 
+`(subject, object, access right)` in a system. Subject doesn't necessarily have
+to be a user - it could also be a process or a service. Objects don't
+necessarily have to be a file or folder - could also be a printer, a database
+row, system's memory. Access right could be read, write, append, execute.
+
+This gets complex to reason about as the number of principals and objects grows,
+hence the introduction of the access control matrix. However, as convenient as
+it sounds, it isn't directly implementable - it is usually very sparse, which
+makes filling it error prone.
+
+### Access Control List
+
+Instead of storing a global access control matrix, we can store access control
+lists alongside the objects. They are difficult to check and modify at runtime,
+which make them error prone.
+
+### Role Based Access Control
+
+The insight here is that subjects are similar to each other, thus we can assign
+the same rights to them. It is hierarchical.
+
+- Assign permissions to roles
+- Assign roles to subjects
+- Subjects select an active role - they have the permissions of the active role,
+depending on what action they are trying to do *(e.g. the nurse that has both
+doctor and nurse roles so that she can see all patient data)*
+
+There are a few problems with RBAC. The ones introduced in class are
+
+1. Role Explosion as we are tempted to create fine-grained roles which ends up
+reversing any benefits of RBAC
+2. Simple, limited expressiveness. Can be difficult to satisfy the least 
+privilege principle
+3. Difficult to implement separation of privilege - if we need two doctors to
+authorize a producedure, how do we know that they are both distinct?
+
+### Group Based Access Control
+
+Insight here is that some permissions are always needed together.
+
+- Assign permissions to access objects to groups
+- Assign subjects to groups
+- Subjects have the permissions of ***all*** of their groups
+
+If a user in some group **shouldn't*** have access to some object, a
+group they're associated does have access to this object, then we can assign
+them a ***negative permission***. This negative permission is always checked
+first during access control
+
+## Capabilities
+
+We described before that with an access control list, we can store the 
+permissions directly with the object. However, a second option is to store 
+permissions with the subject - we call this the subjects capabilities. If a 
+subject doesn't have any assigned permissions for a specific file, then they
+will store no information about it. This is nice because we can save storage.
+
+The idea is that the subject shows their credentials to any system or subsystem.
+This is especially handy for distributed systems as it is difficult to keep
+track of permissions across all files.
+
+Moreover, delegating permissions is simpler - we just have to transfer 
+permission from one subject to another *(credentials)*. These capabilities do
+also have problems though, notably in revoking permissions as revoking a single
+permission is $O(num_{users})$. Moreover, given how simple delegation is, how
+do we verify the legitimacy of these delegations.
+
+## Ambient Authority
+
+Recurrent problem in access contorl. Refers to the situations in which when
+performing an action in a system, we don't specify the subject but only the
+action and the object on which it is performed. If the subject is implicit, then
+it can lead to a *confused deputy problem*. 
+
+### Example 1 - Ambient Authority
+
+```C
+file = open("ur_mums_creditcard.txt", "r");
+send_to(malicious_user, file);
+```
+
+If the above program `download_ram.exe` is run by a user, it will be run with
+their set of permissions.
+
+### Example 2 - Confused Deputy Problem
+
+Consider a pay-per-use compiler, which takes two files as arguments:
+`input` and `output`. It compiles the file `input`, writes any errors to 
+`output`, and writes a record of the compile process to `bill` for billing
+purposes.
+
+Let's assume now that Alice wants to compile without paying. She doesn't have
+access rights to `bill`, so she can't do anything about it herself. What she can
+do however, is pass `bill` as `output` argument - all compilation errors will
+be written to `bill` by **by the compiler** which has write access, corrupting 
+it and making it impossible for her to be billed.
+
+### Avoiding Confused Deputies
+
+To address the second example, we could for instance make it so that Alice must
+provide access to the `output` file. Alice isn't able to give any capabilities
+for `bill` as she does not own the file.
+
+$\rightarrow$ capabilities has no ambient authority.
+
+## Linux / UNIX Acces Control
+
+- Uses User-IDs *(UID)* and Group-IDs *(GID)*
+- Each user has their own directory `/home/username/`, and user accounts are
+stored in `/etc/passwd`
+- Users belong to one or more groups.
+
+each line in `/etc/group/` contains a group with its GID, as well as a list of
+all users belonging to the group.
+
+In UNIX, everything is a file, and each user "owns" a set of files. All 
+processes run by a user will run with their privileges *(ambient authority)*.
+
+The special `root` user has UID 0. This root is in the TCB.
+
+- `sudo` executes a single action as super user
+- `su <UID>` changes active user. If no `UID` is specified, then it switches to
+super user. Doing this is dangerous.
+
+### Special Rights
+
+There are `suid` and `sgid` bits that serve to indicate that a file is not run
+with the privileges of the launcher, but the privileges of the owner user or
+group. This is specifically useful for running programs that require root,
+respecting the least privilege principle.
+
+# Week 04 - Mandatory Access Control
+
+In MAC the policy is given - object owners cannot set their own permissions -
+only assign the rights dictated by the policy.
+
+## Security Models
+
+A design pattern for a specific security property or set of properties. When
+faced with a standard security problem, it's better to use a tried and tested
+solution.
+
+The security model isn't all-encompassing however. Many aspects aren't covered
+such as who the subject are, what the objects are, and what the implementation
+mechanism will be.
+
+### Bell-La Padula Model *(BLP)*
+
+this model assums that the system has subjects $S$ and objects $O$. Access is
+described by four attributes
+
+1. **Execute:** cannot observe or modify, but can run it
+2. **Read:** can only observe the object
+3. **Append** cannot read the object, but can add content to the end of it
+4. **Write** can see and object and can modify it - delete, change, add, etc...
+
+### Level Function for Objects *Security Level*
+
+We define a level function to be able to associate objects to a security level.
+***Classification*** is a total ordering of labels *(unclassified, classified,
+secret, top secret)* whereas ***Categories*** are compartments of objects with
+a common topic *(Nuclear, NATO, ...)*
+
+A tuple $( Classification \lbrace Categories \rbrace )$ is called a security
+level.
+
+For this security level function, we define a **dominance relationship**.
+
+`(l1, c1)` dominates `(l2, c2)` $\Leftrightarrow$ `l1>=c1` `c2` $\subset$ `c1`.
+
+We can go further by defining the ***dominance lattice***, which represents
+as a graph the dominance relationships between security levels on both
+aspects: labels and categories.
+
+We note that dominance is a transitive relation.
+
+### Level Function for Subjects *Clearance Level*
+
+BLP sometimes calls this classification.
+
+**Clearance** is defined as the maximum security level that has been assigned
+to a subject - how secret are the objects that they can access. 
+***Current Security Level:*** besides their overall clearance, subjects can
+also act at a lower level.
+
+### BLP System: SS Property
+
+This is called the simple security policy. We can formulate it as: *if 
+`(subject, object, r)` is a current access, then `level(subject)` dominates
+`level(object)`*
+
+What it is saying fundamentally is that a subject can only access objects whose
+classification is dominated by the subject's clearance. This implies that a
+subject cannot read anything above their clearance.
+
+
+### BLP System: *-Property
+
+This "star" property says not to write down. A subject cannot write in clearance
+levels lower than their own. Prevents leakages.
+
+The previous property wasn't enough - a malicious high-clearance user could
+copy sensitive information to lower levels of clearance, thus exposing it to
+anyone with lower clearance that shouldn't be able to access said sensitive
+information.
+
+### BLP System: DS Property
+
+This stands for *discretionary property*. Regardless of the subjects clearance
+levels, information should only be provided on a need to know basis *(by the
+least privilege principle)*. I.e. An Access control matrix is still required.
+
+## BLP: Basic Security Theorem
+
+This basically says that if all state transitions are secure and the initial
+state is secure, then all subsequent state will be secure regardless of inputs.
+*(kind of like a proof by induction type of thing)*. This allows us to reason
+about a security system relatively easily.
+
+In the BLP model, all aforementioned properties should hold. 
+
+### Problem with BLP
+
+Even if the rules are respected, there can still be information leakage from
+higher levels to lower levels.
+
+### Covert Channels
+
+A covert channel is any channel that allows information to contrary to the 
+security policy.
+
+To mitigate these, we can isolate *(communication with low-level rendered 
+impossible)* or add noise to communication.
+
+### Declassification
+
+Common place *(think of military example)*. To enable communication with lower
+layers given a no-write-down policy, we can clean an object from a higher level
+of sensitive information before passing it down.
+
+In practice, this is pretty difficult.
+
+### Limitations of BLP
+
+BLP is very much confidentiality-oriented, and doesn't really consider integrity
+or availabity. Moreover, the three properties still do not guarantee that
+confidentiality is achieved.
+
+## Protecting Integrity
+
+This is key for security in general. Remember that a security policy places all
+of its trust into the TCB, thus it must remain integral.
+
+## BIBA Model for Integrity
+
+Here we only consider two operations - read and write. There are also two key
+properties
+
+1. High-level subjects should never see lower-level information so as to not
+corrupt their vision
+2. Lower-level subjects should never write to high-levels so that high-integrity
+information cannot be polluted
+
+#### Example
+
+The bank director can establish a rule and all employees will read it. However
+employees cannot rewrite the rules.
+
+In a computer, a web application open in the browser should not be able to write
+to the filesystem.
+
+### BIBA Variant 1: Low Water-Mark for Subjects
+
+Subjects start processes at their highest integrity level.
+If we need to access a lower-level object, just downgrade our integrity level.
+This is similar to *sandboxing* - executing a process with potentially dirty
+information in a safe environment. If we lower integrity level, then we can 
+no longer write up and compromise higher-level information until we upgrade
+integrity again - hence the comparison with sandboxing.
+
+Problem with this is that you could have a label creep problem wherein all
+subjects end up in a lower level and no-one is able to write at a higher level
+anymore.
+
+### BIBA Variant 2: Low Water-Mark for Objects
+
+Once an object has been written to by a subject, it assumes the lowest level
+of the subject or object. If a subject pollutes an object with information by
+writing to it, the object is automatically downgraded to the level of the 
+subject to avoid problems.
+
+This policy only allows for integrity violation detection - the file cannot
+harm a higher-level, but tampering may have happened. A solution to prevent
+tampering is to replicate objects - after the operation has happened we can
+sanitize or upgrade the replica
+
+## Sanitization
+
+The process of taking moving a low integrity object to high integrity.
+
+This is the cause of many real-world security vulnerabilities. Think SQL 
+injection / XSS.
+
+The fundamental principle of sanitization is the *fail-safe default* principle.
+We check that all desired properties hold, instead of blacklisting 
+undesired properties. If not all of the properties hold, we don't accept the
+input.
+
+## Principles to Support Integrity
+
+- Separation of Duties: require multiple principals to perform an operation
+- Rotation of Duties: Allow a principlal only a limited time on any particular
+role and limit other actions while within this role
+- Secure Logging: taper evident log to recover from integrity failures. Should
+be consistent across multiple entities.
+
+## Chinese Wall Model
+
+1. All objects associated with a label denoting their origin
+2. The originators define "conflict sets" of labels
+3. Subjects are associated with a history of their access to objects, and in
+particular, their labels.
+
+The idea is to avoid subjects from transfering data from multiple objects in a
+conflict set $\rightarrow$ conflict of interest.
+
+
 
