@@ -536,5 +536,225 @@ particular, their labels.
 The idea is to avoid subjects from transfering data from multiple objects in a
 conflict set $\rightarrow$ conflict of interest.
 
+# Week 05 - Cryptography I
 
+When data has to be transfered between two systems that don't share a CPU,
+there is no TCB to enforce access control. Cryptography can be used to ensure
+the confidentiality and integrity of data in transit. It can also be used to
+build authentication methods, protect from denial of service, or support 
+anonymous communications.
+
+## Cryptographic Primitives
+
+This means the *"minimal algorithm"*, i.e. cannot be reduced further without
+functioning/being able to build a security argument, that implements some 
+cryptographic function. It is a building block for building more complex
+cryptographic functions.
+
+## Cryptographic Algorithms for Confidentiality from a High Level
+
+The idea is to generate some key `k`, making sure that the receiver has it. We
+then encrypt the plaintext, sending them `enc(k, m)`. They can then descrypt
+using `dec(k, m)`.
+
+Old school algorithms had a problem - frequency analysis. If we use a simple
+Caeser cipher or just permute the alphabet, an adversary can just analyse the
+frequencies and reconstruct the message effortlessly. 
+
+The ideal encryption method is the
+***one-time-pad***, which provides perfect secrecy *(provided the key is
+distributed randomly and itself isn't subject to frequency analysis)*. Downside
+is that the receiver needs to know the key before-hand, and the key needs to be
+as long as the message. Moreover, the key is never to be reused. Moreover, this
+method ***only ensured confidentiality - it doesn't ensure integrity***.
+
+## Modern Cryptography Methods
+
+### Stream Ciphers
+
+A stream cipher received two inputs: 
+
+1. A small key `k` s.t. $|key| << |message|$
+2. An initialization vector `IV` *(doesn't need to be secret)*.
+
+The keystream generator outputs a stream of bits that is pseudorandom, denote
+this `stream(k, IV)`. This stream seems entirely random for an adversary that
+doesn't have the key.
+
+`IV` is a fixed-size input for cryptographic primitives, and shouldn't be used
+more than once for the same `k`. The idea is to make message encrypted with the
+same key look completely different. Although `IV` doesn't need to be secret,
+it should be unpredictable when used in some block ciphers.
+
+To implement this
+
+```python
+# Alice...
+def send_encoded(m: str):
+    enc = stream(k, IV) xor m
+    send(IV, enc)
+
+# Bob...
+def decode(m: str):
+    dec = stream(k, IV) xor m
+    return dec
+```
+
+Note that given `k` and `IV` both are able to construct an identical stream. The
+issue with this method is that `k` must be known to both parties in advance.
+Furthermore, since the encryption is done bit-by-bit, it's difficult to detect
+tampering.
+
+As with everything, don't try and design an implementation of this from scratch,
+use some tried and tested implementation instead.
+
+### Block Ciphers
+
+A block cipher operates on small blocks, taking a key `k` and message `m` and
+outputting a block that is the same size as the input. The algorithm is such 
+that the output block looks entirely random - input is independent of output.
+
+The decryption algorithm is *(in general)* not the same as the encryption
+algorithm.
+
+The algorithm always works on blocks that are the same size as `k`, so typically
+128 or 256 bytes. However, messages are longer than keys in general, therefore
+we define ***chaining*** which is called a mode of operation.
+
+#### Mode of Operation 1: Electronic Code Book
+
+This mode is straightforward to implement, but a terrible idea. We partition
+`m` into `m_1`, ..., `m_n`, and then encrypt them separately with the same key
+`k`. If two blocks appear the same, however, this implies that they have the
+same plaintext content. This shouldn't be used.
+
+#### Mode of Operation 2: Cipher Block Chaining
+
+In this mode, every block depends on previous blocks to be decrypted. We have
+a recurrence relation for encoding
+
+- $C_0 = IV$
+- $C_i = ENC(k; m_i \oplus C_{i-1})$
+
+Since `IV`/`m` change every time, the text will always appear random. Decryption
+involves doing the inverse operation.
+
+- $C_0 = IV$
+- $m_i = DEC(k; C_i) \oplus C_{i-1}$
+
+However, we notice right away that if `IV` is incorrect, than nothing can be
+recovered. This is very susceptible to tampering.
+
+#### Mode of Operation 3: Counter Mode
+
+The insight is to use an increasing nonce to add randomness without introducing
+dependencies between blocks like in CBC mode.
+
+We use a unique number composed by a **nonce** and a **counter** so that the 
+encryption receives a new number every time. When encrypted, this number becomes 
+a random one-time-pad that we XOR with the plaintext to obtain the cipher text.
+
+$$
+C_i = Enc(k; Nonce+i) \oplus m_i \texŧ{, where i is the counter }
+$$
+
+The counter is increasing, changing the nonce every iteration - thus the output
+of will be different for every block. A nonce should only be used once, 
+otherwise we are feeding the encryption with the same number and we obtain the
+same random pad at the output - effectively like reusing a one time pad.
+
+To decrypt, we need the same random sequence of bits *(as it operates like a 
+one-time-pad)*, so we just use the same algorithm as encryption.
+
+#### Summary on Block Ciphers
+
+**Strengths:**
+
+- Great diffusion: every bit of input affects several blocks of output
+- Chaining helps detect insertion of modification as modifications propagate,
+and receiped ciphertext won't make sense upon decryption.
+
+**Weaknesses:** 
+
+- Block ciphers are slow compared to stream ciphers because they
+need to wait for a full block before encryption/decryption.
+- Error propagation
+
+## Integrity from Symmetric Encryption: Message Authentication Codes *(MAC)*
+
+A message authentication code received two inputs
+
+1. A small key `k` that is kept secret
+2. A message `m` whose integrity needs to be kept
+
+The MAC algorithm outputs a short string that helps the intended receiver to
+verify integrity of the received message - this works because it is 
+exceptionally difficult to produce a pair `(message, MAC(k, message))` without
+knowing `k`.
+
+When Alice sends a message to Bob, and Bob verifies the message using the MAC
+algorithm, he knows that the message has not been tampered with as `k` is needed
+to generate the message authentication code.
+
+### Example: CBC-MAC
+
+A block cipher in CBC mode can be turned into a MAC.
+
+- $C_0 = 0$ *(or any fixed IV)*
+- $C_i = ENC(k; m_i \oplus C_{i-1})$
+- $MAC(k; m_1 \dots m_x) = C_n$
+
+This is deterministic.
+
+## Confidentiality and Integrity
+
+- **Encrypt and append MAC:** MAC is deterministic and computed on the 
+plaintext,  may reveal information about the message. Moreover, we don't have 
+any mechanism for verifying the integrity of cipher-text before deciphering 
+message.
+
+- **MAC then Encrypt:** Still no integrity check on the ciphertext unforunately.
+No information is revealed about the MAC since the adversary doesn't see it.
+
+- **Encrypt then MAC:** Ensures integrity of ciphertext and plaintext. No
+information is revealed about plaintext since the MAC is also encrypted.
+
+# Week 06: Cryptography II
+
+We talk about asymmetric cryptography in this lecture. Already covered RSA to 
+death in other lectures so I'll keep it brief and will ommit some definitions.
+
+## Hash Function Properties
+
+1. **Pre-image resistence:** Given $H(m)$, difficult to find $m$. 
+Non-invertible
+2. **Second pre-image resistence:** Given $m$ and $H(m)$ it is hard to find 
+another $m'$ such that $H(m) = H(m')$.
+3. **Collision resistance:** It is hard to find two messages $m$, $m'$
+such that $m \neq m'$ with the same hash $H(m) = H(m')$.
+
+It is very difficult to design a hash function that fulfils these properties -
+as well as being efficient to compute.
+
+## Asymmetric Key Encryption
+
+### Confidentiality
+
+Message can only be decrypted with secret key.
+
+### Integrity
+
+Sign messages so that they can be verified by the receiver.
+
+### Digital Signatures
+
+We want to ensure **integrity** of message, **authenticity** of sender, and 
+**non-repudiation** - since no party other than the sender can create a valid
+signature for a message, if a message hasa valid signature, the sender cannot
+claim they did not sign it *(no-one else can produce such a signature)*.
+
+### Public Key Infrastructure: Certifiates
+
+1. Authority signs a mapping between names, or names and encryption public keys.
+2. Authority signs a mapping between names and verification keys.
 
