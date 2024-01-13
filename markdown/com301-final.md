@@ -1,6 +1,6 @@
 ---
 geometry: left=2cm, right=2cm, top=2cm, bottom=2cm
-title: CS323 Notes/Summary for Final 
+title: CS301 Notes/Summary for Final 
 author: Ethan Graham
 date: \today
 ---
@@ -334,6 +334,13 @@ The special `root` user has UID 0. This root is in the TCB.
 - `su <UID>` changes active user. If no `UID` is specified, then it switches to
 super user. Doing this is dangerous.
 
+### Directories
+
+Directories are marked with the `d` bit at the beginning of `ls -l` output on
+UNIX/Linux systems. Read privilege `r` means that we can only list the contents
+of the file - for example with `ls` command. `x` privilege means that we can
+perform operations on that directory, such as changing into it with `cd`.
+
 ### Special Rights
 
 There are `suid` and `sgid` bits that serve to indicate that a file is not run
@@ -506,6 +513,24 @@ harm a higher-level, but tampering may have happened. A solution to prevent
 tampering is to replicate objects - after the operation has happened we can
 sanitize or upgrade the replica
 
+### Biba Axioms And Integrity Hierarchy
+
+We define a hierarchy of integrity levels
+
+- High Integrity: critical and sensitive information
+- Medium Integrity: Less sensitive, but still important for proper functioning
+of the system
+- Low Integrity: Least trusted level. Contains information that is considered
+public
+
+There are two main axioms that are followed.
+
+***Simple Integrity Axiom:*** A subject with a given integrity level should not
+write to any object at a lower level than its own.
+
+***Star Integrity Axiom:*** A subject with a given integrity level should not 
+write to data at a higher level than its own.
+
 ## Sanitization
 
 The process of taking moving a low integrity object to high integrity.
@@ -535,6 +560,8 @@ particular, their labels.
 
 The idea is to avoid subjects from transfering data from multiple objects in a
 conflict set $\rightarrow$ conflict of interest.
+
+This is part of the BIBA model.
 
 # Week 05 - Cryptography I
 
@@ -603,7 +630,8 @@ def decode(m: str):
 Note that given `k` and `IV` both are able to construct an identical stream. The
 issue with this method is that `k` must be known to both parties in advance.
 Furthermore, since the encryption is done bit-by-bit, it's difficult to detect
-tampering.
+tampering, thus this method is susceptible to bit-flipping attacks *(doesn't
+protect message integrity very well)*.
 
 As with everything, don't try and design an implementation of this from scratch,
 use some tried and tested implementation instead.
@@ -645,6 +673,11 @@ involves doing the inverse operation.
 However, we notice right away that if `IV` is incorrect, than nothing can be
 recovered. This is very susceptible to tampering.
 
+Moreover, if we don't change `IV` between successive messages, then the first
+block will $C_0$ will be the same in those blocks. Thus if encrypting the same
+message twice will have the same output *(remember, `k` is fixed!)*. This is a
+common vulnerability.
+
 #### Mode of Operation 3: Counter Mode
 
 The insight is to use an increasing nonce to add randomness without introducing
@@ -655,7 +688,7 @@ encryption receives a new number every time. When encrypted, this number becomes
 a random one-time-pad that we XOR with the plaintext to obtain the cipher text.
 
 $$
-C_i = Enc(k; Nonce+i) \oplus m_i \texŧ{, where i is the counter }
+C_i = Enc(k; Nonce+i) \oplus m_i \text{, where i is the counter }
 $$
 
 The counter is increasing, changing the nonce every iteration - thus the output
@@ -665,6 +698,10 @@ same random pad at the output - effectively like reusing a one time pad.
 
 To decrypt, we need the same random sequence of bits *(as it operates like a 
 one-time-pad)*, so we just use the same algorithm as encryption.
+
+Note *(from live exercises)* we can actually reuse the same nonce under 
+different keys, as it will produce a different OTP. However, important to never
+use the same nonce for the same key.
 
 #### Summary on Block Ciphers
 
@@ -744,7 +781,24 @@ Message can only be decrypted with secret key.
 
 ### Integrity
 
-Sign messages so that they can be verified by the receiver.
+Sign messages so that they can be verified by the receiver. We can sign a 
+message by sending, alongside the message, the message encrypted using ones
+own secret key. When the receiver gets the message, they decrypt the message
+using sender's public key. This proves integrity of the message, as well as
+being able to know where the message came from.
+
+#### Example From Live Exercises
+
+One could think that a solid way to prove integrity if to add a hash of the 
+message, and then encrypt this along with the message. But this doesn't prove
+provenance of the message *(an adversary could pose as Alice and send something
+to Bob)*. 
+
+However, signing the message with Alice's secret key, and having Bob decrypt
+the signature using Alice's public key can prove this, as Alice's secret key is 
+known only to Alice, and Bob has access to Alice's public key through the 
+public key infrastructure. This proves integrity of the message, as no one
+else could have produced the signature.
 
 ### Digital Signatures
 
@@ -753,8 +807,363 @@ We want to ensure **integrity** of message, **authenticity** of sender, and
 signature for a message, if a message hasa valid signature, the sender cannot
 claim they did not sign it *(no-one else can produce such a signature)*.
 
-### Public Key Infrastructure: Certifiates
+Digital signatures are used in the internet public key infrastructure to sign
+certificates which authenticate web servers / domain names.
+
+#### Public Key Infrastructure: Certifiates
 
 1. Authority signs a mapping between names, or names and encryption public keys.
 2. Authority signs a mapping between names and verification keys.
+
+## Limitations of Asymmetric Cryptography
+
+Asymmetric cryptography is computationally pretty costly, much more so than
+symmetric counterparts of equivalent security. There aren't any good cipher
+modes for ecrypting large messages - we can only do one block.
+
+To overcome these shortcomings, we use hybrid encryption.
+
+## Digital Signatures on Hash Functions
+
+The insight is that if we sign long messages, both signing and verifying will
+take a long time and won't be practical. We choose to sign using the hash
+
+```python
+# Alice; m is the cipher text
+def send_message(m: str):
+    h = hash_func(m)
+    signature = sign(secret_key, h)
+    send(m, signature)
+
+# Bob, upon receiving message.
+def verify_message(m: str, signature: str):
+    h = hash_func(m)
+
+    if lines_up(public_key_sender, h, signature):
+        return True
+    else 
+        return False
+```
+
+For this process, we need second pre-image resistance and collision resistance.
+We don't need pre-image resistance as the message m is already sent in public.
+
+## Hybrid Encryption
+
+Use asymmetric key encryption to send a symmetric key. We then use this
+symmetric key for the rest of communication. Every time Alice wants to 
+communicate with Bob, she creates a new key. However the problem here is that
+if an adversary gets hold of Bob's key, then the secrecy of all past sessions
+is compromised as well. This brings us to a new desired property: **foward
+secrecy** - the secrecy of a session is maintained even if long term keys are
+compromised. A compromise at time $t$ should not compromise and communication
+at $t', \, t' < t$. RSA basically makes it impossible to compute secrete keys
+given the complexity of prime factorisation for large primes.
+
+
+# Week 10 - Software Security
+
+## Memory Corruption Through Buffer Overflow
+
+If input sanitized *(in particular, checked for length)*, then overflows can
+occur, overwriting other locations in memory.
+
+```C
+void
+vulnerable(int user_1, int value, int *array)
+{
+    // no bound check is done. This could overwrite another location in the
+    // program!
+    array[user_1] = value;
+}
+```
+
+## Memory Safety: Temporal Error
+
+Temporal safety means that when we acccess the object that is pointed to, it
+should 
+
+1. Point to a valid object
+2. Point to the same object as when the pointer was created
+
+```C
+void
+vulnerable(char *buf)
+{
+    free(buf);
+    printf("%c", buf[12]); // memory is no longer associated to buf!!
+}
+```
+
+## Memory Safety: Spatial Error
+
+Spatial safety is a property that ensures that all memory accesses in a program
+are within memory bounds. 
+
+```C
+void
+vulnerable()
+{
+    char buf[12];
+    char *ptr = buf[11];
+    char *ptr++ = 10; // dereferences and then adds 1 -> ptr = buf[12]
+    *ptr = 42;        // we aren't allowed to make this access. Out of bounds
+}
+```
+
+In many cases, memory safety errors cause seg-faults which halts program.
+
+This can be exploited, for example, in the following.
+
+```C
+void
+vulnerable()
+{
+    int authenticated = 0;
+    char buf[80];
+
+    gets(buf); // overflows if input is larger than 80 bytes.
+    // ...
+}
+```
+
+## Uncontrolled Format String
+
+Imagine we have the following
+
+```C
+#include <stdio.h>
+
+int
+main(int argc, char **argv)
+{
+    char buf[100];
+    strncpy(buf, argv[1]);
+    printf(buffer);
+    return 0;
+}
+```
+
+What happens here if `argv[1] = "You scored %d\n"`? Well basically it will go
+and look for 4 bytes from the stack *(integer)*. If input was `4%$p` we could
+be able to read the fourth parameter from the stack.
+
+The programmer should decide to format the string instead of leaving it up
+to the runtime. The programmer should define parameters, and not let the user
+input them.
+
+## Attack: Code Injection
+
+The goal is to execute code *(e.g access a file)* in a running process, or
+modify contorl flow to execute unexpected instructions.
+
+Control flow attacks are most common on current systems. In these attacks, 
+the adversary can use memory corruption to modify a code pointer and prepare
+data to be processed by system functions.
+
+### Code Injection Attack
+
+Consider 
+
+```C
+void 
+vulnerable(char *u1)
+{
+    char tmp[MAX];
+    strcpy(tmp, u1);
+    // ...
+}
+
+// somewhere else in program
+vulerable(&exploit);
+```
+
+When a function is called, program prepares the stack - reserving a new stack
+frame where the data of the function will be stored. Firstly, the function 
+argumnet `exploit` will be pushed to stack, followed by the return address for
+the program. Before starting the function, we also reserve space in the stack
+for local variables - in this case `MAX` bytes for `tmp[MAX]`. There is also 
+saved space for the base pointer *(4 bytes or 8 bytes depending on OS)*.
+
+During runtime, the call to `strcpy` will started copying the content of `u1`
+into `tmp` - let's assume that its some *(malicious)* executable code. ***We
+never check the size of `u1`***. This means that it can overflow out of the
+`tmp` buffer, and into the other stack memory. At this point, this is a memory
+safety violation *(a spatial one)*. 
+
+- We could write into the stack base pointer
+- We could write into the return address
+
+At this point, if we wrote some shellcode into `tmp[]`, and we got the return
+address to point to `&tmp`, then when the function returns it will execute the
+malicious code that we have injected. We have violated the integrity of the
+return pointer.
+
+### Security Measure: Data Execution Prevention *(DEP)*
+
+This is enforced at the hardware level, more specifically at page granularity,
+by setting an write/executable bit to say if the page is writeable or 
+executable. This the prevents self-modifying code. This does, however, also
+impede on many functionalities in applications offered as a service where the 
+user executes server-provided code *(for example javascript being executed
+on browser)*.
+
+### Attack Scenario: Code Reuse - Control Flow Highjack
+
+This is a way of circumventing DEP. The idea is instead of injecting code, we 
+find code that is already present in memory *(and therefore executable)* and 
+rediract the program control flow to those pieces. These pieces of code are 
+typically known as gadgets. 
+
+```C
+void 
+vulnerable(char *u1)
+{
+    char tmp[MAX];
+    strcpy(tmp, u1);
+    // ...
+}
+
+vulnerable(&exploit);
+```
+Again, the stack will fill up as described before, with `tmp[]` sitting on top.
+
+Instead of now filling up `tmp[]` with exploitable code, we can just overflow
+and get the return address to point to some function `&system()`. For this to
+actually cause harm, though, the adversary overflows out of `tmp[]` even 
+further, preparing the stack to be in the state that is expected by `system()`,
+i.e. providing a base pointer, a return address for after the call, and function
+arguments for the call to `system()`.
+
+When `vulnerable` returns/exits, control flow will have been redirected to
+`system()`. We can chain these together to execute arbitrary chains of 
+instructions.
+
+### Security Measure: Address Space Layout Randomization
+
+The goal is to prevent an attack from reaching a certain target address - which
+stems from adversaries knowing where system functions lie in memory. A defense
+against these types of attacks is randomizing memory layout so that the attacker
+can't know where to redirect the function.
+
+This defense does have its own set of issues however
+
+- The adversary can still redirect the program; not necessarily guaranteeing
+success of the attack, but something bad could still happen for example 
+triggering other unintended functionality and reading from memory.
+- In runtime, the OS needs to undo the randomization of the program, thus
+slowing down execution.
+- Not all regions can be randomized due to the way in which CPU and memory are
+constructed *(some regions are always the same, and ASLR cannot defend them)*.
+
+### Security Measure: Stack Canaries
+
+This is named after coal mine canaries. When they died, it would indicate that
+the air was unsafe to breathe.
+
+The idea is to protect the return instruction pointer on the stack by inserting
+a random value between the writable area in the stack and the return address.
+Since it is randomly generated, it is highly unlikely that the attacker has any
+chance of predicting it and writing the same value and then return address.
+
+So this indeed protects against writes from an attacker, but this does not 
+protect against reads *(such as ones leveraging string formatting as discussed
+previously in this chapter)*.
+
+## Security Testing
+
+Testing for security is difficult. We can never ensure that we have found all
+bugs that matter.
+
+***"Testing can only show the presence of bugs, never their absence."***
+
+Ideally we would like to test all possible control paths through the program,
+as well as all data flows. This is impossible - in fact the halting problem
+is literally undecidable.
+
+```C
+void
+program()
+{
+    int a = read();
+    int x[100] = read();
+
+    if (a >= 0 && a <= 100) {
+        x[a] = 42;
+    }
+    // ...
+}
+```
+
+Here, all control-flows are explored since they are discretized completely.
+However, not all data-flows are considered since we don't know what `read()`
+will return - not all possible variable values are explored.
+
+### How to Test Security Properties
+
+#### Manual Testing
+
+- Exhaustive: Cover all inputs *(not feasible)*
+- Functional: Cover all requirements *(depends on specification)*
+- Random: automate test generation
+- Structural: Cover all code *(works for small code bases, e.g. unit testing)*
+
+#### Automated Testing
+
+- **Static Analysis:** Analyze program without executing. Imprecise, however, 
+due to lack of runtime information. Only finds basic errors, and can't catch 
+race conditions that happen when address is pointed to by more than one variable.
+- **Symbolic Analysis:** Execute the program symbolically and keep track of 
+branch conditions. This is very formulaic, and super effective as it considers 
+all possible paths. Doesn't scale well at all because it requires a huge amount 
+of state.
+- **Dynamic Analysis:** Execute the code with diverse inputs. The main challenge
+is covering all paths *(control and data flows)*.
+
+### Coverage
+
+Measure how complete a set of tests if by quantifying how many statements of the
+program are executed by the tests. We talk about **statement coverage** *(how 
+many statements e.g. assignment, comparison, etc...)* have been executed and
+**branch coverage** *(how many branches among all possible paths have been 
+executed)*.
+
+Neither of these two types of coverages are complete, unfortunately. We may
+have tested all branches without testing all values within those branches and
+vice-versa.
+
+### Fuzzing
+
+A random testing technique that mutates input to improve test coverage.
+
+1. **Dumb Fuzzing:** unaware of input structure, randomly mutates input
+2. **Generation-based Fuzzing:** has a model which described input; input
+generation produces new input seeds at each round
+3. **Mutation-based Fuzzing:** leverages a set of valid seed inputs; input
+generation modified inputs based on feedback from previous rounds.
+
+We can either choose to give the fuzzer no knowledge of the code, partial 
+knowledge of the code, or full knowledge. We refer to these as black box, grey
+box, and white box.
+
+Moreover, we can use sanitization to detect bugs earlier, and increase bug
+detection chances. A famous example is **AddressSanitizer** which detects
+memory errors, marking red-zones i.e. zones that the program should not catch.
+Doubles execution time.
+
+- out of bounds accesses to heap
+- use-after-free
+- use-after-return
+- use-after-scope
+- double-free
+- memory leaks
+
+Another famous example is **UndefinedBehaviorSanitizer** which detects various
+forms of undefined behavior. It instruments code to trap undefined behavior in
+C/C++ programs.
+
+- unsigned / misaligned pointers
+- signed integer overflow
+- illegal use of `NULL` pointers
+- illegal pointer arithmetic
 
