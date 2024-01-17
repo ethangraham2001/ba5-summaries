@@ -860,6 +860,258 @@ compromised. A compromise at time $t$ should not compromise and communication
 at $t', \, t' < t$. RSA basically makes it impossible to compute secrete keys
 given the complexity of prime factorisation for large primes.
 
+# Week 07 - Authentication
+
+This is the process that entities use to verify the identity of other entities
+that they are interacting with. This happens before access control - to be able 
+to grant access privileges to an entity we need to first know who they are.
+
+## Passwords
+
+There are things to be considered when using passwords
+
+1. We require secure transfer between client and host
+2. When trying an erroneous password, no information should be given about the
+real password
+3. Storage should be secret
+4. Secrecy depends on how easy it is to predict.
+
+### Secure Transfer
+
+Use some form of encryption as seen in previous lectures. This guarantees that 
+it cannot be eavesdropped by third parties. This doesn't entirely solve the 
+issue because of potential replay attacks.
+
+Example: a malicious third part saves the ***encrypted message*** containing 
+login information, and then reuses the encrypted message at a later point to
+login into the account.
+
+#### Challenge Response Protocols
+
+1. Client that wants to authenticate sends their intention to login.
+2. Host sends a challenge, which is a random number from a large space to avoid
+easy prediction.
+3. Princpal encrypts the password together with the challenge. Ensures that the
+password is correct and that the password is never encrypted to the same value.
+
+The host then deletes the challenge so that the message cannot be replied.
+
+### Secure Storage
+
+This is to protect against password breaches if security is compromised.
+
+#### Password Hashing
+
+This is great, but there are some caviats
+
+- Anyone can compute a hash relatively inexpensively
+- Passwords are never truly random - they only fill up a fraction of the total
+sample space.
+
+#### Password Hashing with Salts
+
+We store passwords as a hash plus a salt. We add the salt to the end of the 
+password, and then hash it - storing the salt with it so that we can compare
+password attempts with the correct salt during authentication. 
+
+This prevents people from using precomputed rainbow tables since different salts
+are added to passwords. Insight: a password will hash differently with different
+salts added.
+
+However this doesn't mean that a dictionary attack is impossible *(dictionary
+attack refers to using a list of possible hashed passwords and using them on
+an exposed database)*. Breaking a single password is still possible - it's just
+excessively hard to get all passwords from a database. Requiring specific 
+elements in passwords, thus increasing entropy, is still required. And, of 
+course, access control to the database is key.
+
+### Secure Checking
+
+Checking letter by letter, for example, reveals information on the password.
+If password is instantly rejected, then the first letter is probably wrong. If 
+it only rejects after a while, then the chances are we have the first few 
+password symbols correct. In general, this is called a ***timing attack***, 
+where an attacker exploits how long the system takes to perform a certain 
+action.
+
+We should always check everything, and take the same time regardless on whether 
+or not it fails. There are many libraries that handle all of this stuff.
+
+### Difficule to Predict
+
+Long and hard to remember passwords are often recycled - this isn't great.
+
+## Ways to Prove Who You Are
+
+There are both traditional and non-traditional ways to prove one's identity.
+
+## Biometrics *(What you are)*
+
+There are problems with biometrics. Firstly, they are hard to keep secret - 
+e.g. a signature on a card or a fingerprint left on a door handle. It is 
+difficult, even impossible maybe, to revoque biometrics - you can't create a new
+fingerprint for yourself. They are also identifiable and unique, and thus linked
+across systems.
+
+## Tokens *(What You Have)*
+
+We can authenticate by proving ownership of a token.
+
+### Implementation
+
+- Synchronize time between client and server
+- Share a seed between client and server
+- Compute a token by performing some cryptographic function $n$ times on the
+shared seed, where $n$ is the number of time intervals since synchronization.
+$v = f^n(seed; k)$.
+- The server compares the value sent by the client with the value that it
+computed.
+
+Since the $f$ function is keyed with some shared secret $k$, it is impossible
+for an adversary to predict past, current, or future values. This wouldn't be
+the case if we'd used some hash function, as anyone can compute a hash.
+
+## 2FA *(What You Have, What You Know, What You Are)*
+
+Combines multiple elements. We cannot keep, for example, secret keys on 
+smartphones as they aren't secure enough - this is why SMS codes and QR codes
+are used during 2FA.
+
+## Authenticating Machines
+
+This is done using public key cryptography to produce **digital signatures.**
+This is used in internet protocols such as `https` and `tls`. This is very
+difficult to implement in practice.
+
+# Week 08 - Adversarial Thinking I
+
+Having a good understanding of attackers helps make us a better defender. For
+example, pentesting is a pretty major industry. However, we must keep in mind
+that the lack of found attacks doesn't guaranetee security. This relates to
+the failsafe principle.
+
+## The Security Engineering Process
+
+Attacks are typically developed systematically - it enables adversaries to
+explore many angles where a potential vulnerability could lie.
+
+We can define a process for securiyt engineering
+
+1. Define a security policy and a thread model $\rightarrow$ **What to protect
+from**
+2. Define security mechanisms that support the policy given the thread model
+$\rightarrow$ **How to protect it**
+3. Build an implementation that supports/embodies the mechanism $\rightarrow$
+implement the protection
+
+Many things can go wrong here
+
+- Forgetting the principal, assets of properties
+- Underestimation of the advsersary
+- etc...
+
+## The Attack Engineering Process
+
+The goal here is to exploit weaknesses introduced during the security
+engineering process. 
+
+## Exploiting Security Policy Flaws
+
+### Exploiting Misidentified Assets in the Security Policy
+
+We illustrate this with an example. An HSM is a CPU that is secured physically.
+That is, it can hold cryptographic keys that cannot be extracted by observing
+the device, or measuring the device characteristics *(be it power consumption,
+computation timing, etc...)*. Their security partly comes from them having a
+strict API for interaction with them - following economy of mechanism, HSMs
+can only be accessed with very few commands. One function is
+`extract_from_key` which on `offset` and `key_length` generates a key using
+the secret key kept internally.
+
+Since the key to this `extract_from_key` operation only has $2^8 = 256$ bits,
+it can be searched exhaustively to extract the key.
+
+### Expoiting Unforeseen Access Capabilities
+
+We could, for instance, consider during design that physical access will be
+required to exploit vulnerabilities. However, in upgrading the aforementioned
+design, we may add network capabilities without thinking to revise the security
+policy. How the device is vulnerable to network attacks.
+
+IoT devices are weakly protected, and can easily be manipulated.
+
+### Exploiting Unforeseen Capabilities
+
+Take as example the GSM network. When it was created, it was assumed that it
+wouldn't be feasible to create an antenna in terms of cost and know-how. Thus,
+when running the protocol to connect phones to the network, antennae don't 
+authenticate.
+
+However, these days, iwe have software defined radio boards that can be easily
+programmed to impersonate an antenna - tricking other devices into thinking that
+it is the base station and connecting to it.
+
+### Exploiting Unforeseen Computational Capabilities
+
+One of the examples is brute forcing RSA long keys. One reason why the internet
+is changing to longer RSA keys.
+
+## Exploiting Mechanism Design Weaknesses
+
+Security by obscurity is generally a bad idea. We can cite examples such as 
+Tesla key fobbing algorithms as well as weak cryptography schemes. It may be
+easier than you think to reverse engineer secret algorithms. $\rightarrow$ open
+design principal.
+
+## Exploiting Bad Implementation
+
+An example that we can list is the implementation WEP using RC4, which is a 
+stream cipher using a small IV. The fact that the IV is small means that when
+there is enough traffic, the IV gets repeated - if we repeat the IV with a
+given key, a stream cipher will produce the same pseudorandom string multiple
+times, which then is intended to serve as a one-time-pad. Given the stream
+reuse, an adversary can recover information about the message and because of the
+internals of RC4 even recover the symmetric key and decrypt all communication.
+
+Besides bad parametrization of algorithms, programming mistakes can also be the
+cause of security vulnerabilities.
+
+- Forgetting checks
+- Checking the wrong things
+- Poor sanitization
+- Confusion
+
+
+## Threat Modelling Methodologies
+
+This helps a security engineer reason about threats to a system through a 
+*"what could go wrong?"* approach. We prioritize problems during implementation
+of security mechanisms through systematic analysis
+
+- What are the most relevant threats?
+- What kind of problems can threats result in?
+- Where should I put my effort?
+
+There are a few structures that help with this
+
+### Attack Trees
+
+The attack goal is the root, and the ways to achieve this goal are represented
+by branches. The leaves represent the weak resources
+
+### STRIDE
+
+This was introduced by microsoft. We model the target system with entities,
+assets, and flows. This allows us to reason about
+
+- **Spoofing** which threatens authenticity.
+- **Tampering** which threatens integrity
+- **Repudiation** which threatens non-repudiability
+- **Information disclosure** which threatens confidentiality
+- **Denial of service** which threatens availability
+- **Elevation of privilege** which threatens authorization
+
+This helps us consider different dangers and harms in a systematic way.
 
 # Week 10 - Software Security
 
@@ -1003,7 +1255,10 @@ return pointer.
 
 This is enforced at the hardware level, more specifically at page granularity,
 by setting an write/executable bit to say if the page is writeable or 
-executable. This the prevents self-modifying code. This does, however, also
+executable - we also refer to this method as `W^X`, write xor execute, for this
+reason.
+
+This the prevents self-modifying code. This does, however, also
 impede on many functionalities in applications offered as a service where the 
 user executes server-provided code *(for example javascript being executed
 on browser)*.
@@ -1146,7 +1401,9 @@ We can either choose to give the fuzzer no knowledge of the code, partial
 knowledge of the code, or full knowledge. We refer to these as black box, grey
 box, and white box.
 
-Moreover, we can use sanitization to detect bugs earlier, and increase bug
+## Sanitization
+
+We can use sanitization to detect bugs earlier, and increase bug
 detection chances. A famous example is **AddressSanitizer** which detects
 memory errors, marking red-zones i.e. zones that the program should not catch.
 Doubles execution time.
