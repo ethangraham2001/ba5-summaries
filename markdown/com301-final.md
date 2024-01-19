@@ -957,6 +957,14 @@ across systems.
 
 We can authenticate by proving ownership of a token.
 
+- Token-based authentication uses symmetric-key cryptography. No public keys
+are used. They share a secret key, which is required to be able to compute
+the same value.
+- The token requires a shared secret that is input to a keyed cryptographic
+function. Hashes don't work - otherwise anyone could compute new token values
+- Tokens aren't deleted after use, otherwise no futher verification values can
+be computed.
+
 ### Implementation
 
 - Synchronize time between client and server
@@ -1106,12 +1114,101 @@ assets, and flows. This allows us to reason about
 
 - **Spoofing** which threatens authenticity.
 - **Tampering** which threatens integrity
-- **Repudiation** which threatens non-repudiability
+- **Repudiation** which threatens non-repudiability. Repudiation is to falsely 
+deny having done something in the system
 - **Information disclosure** which threatens confidentiality
 - **Denial of service** which threatens availability
-- **Elevation of privilege** which threatens authorization
+- **Elevation of privilege** which threatens authorization. This is when an
+adversary obtains more permissions than what should be allowed.
 
 This helps us consider different dangers and harms in a systematic way.
+
+# Week 09 - Advsersarial Thinking II 
+
+## Common Weaknesses Enumeration *(CWE)*
+
+The idea is to have a database of software errors that lead to vulnerabilities
+to help security engineers avoid common pitfalls. The idea is to not repeat
+known errors.
+
+### CWE I Secure Interaction Between Components
+
+This is when a programmer doesn't check the information that is sent between
+different components in a system - this is unsanitized information and it can
+result in unintended behaviors, allowing the adversary to break security.
+
+An example of this is OS command injection. Similarly, we can think of **XSS**, 
+wherein a user inputs javascript code which will be run.
+
+All of this can be avoided with proper input sanitization. Remember BIBA - 
+never bring low-integrity *(unknown)* information to high-integrity territory 
+*(OS)*. Proper input sanitization is very difficult.
+
+We can also list the example of **CSRF** which is short for cross-site request
+forgery, where an attacker performs actions while impersonating someone else.
+E.g. we make a fake website that sends forged requests to the real website using
+the victim's credentials. This is an example of the confused deputy problem, and
+taking advantage of ambient authority - when the victim is logged in, the web
+client acts with there privileges.
+
+#### Same Origin Policy **SOP**
+
+This is a web-browser security mechanism. Restricts scripts of one origin from
+accessing data from another origin.
+
+Assume an origin `https://example.com/a`
+- **Yes, origin match:** `https://example.com/b`
+- **No, protocol mismatch:** `http:/example.com`
+- **No, host mismatch:** `https://www.example.com/a`
+- **No, port mismatch:** `https://www.example.com:5000/a`
+
+#### Cookies
+
+This is a small piece of data stored by a browser on a user's device which 
+serves many purposes from storing stateful information to tracking users. 
+Cookies don't follow the SOP *(it is a different security model)*.
+
+A new `HTTP` request to `bank.com` will include all cookies for `bank.com`, 
+even if the request originated from another domain.
+
+What this implies for CSRF is that when a victim visits a malicious site, all
+cookies for the legit site will be included. This means that the attacker can
+reuse these credentials *(such as session cookie)* to send forged traffic to the
+legit site. 
+
+To mitigate CSRF, we generally employ the SOP - don't accept a 
+cookie that doesn't come from where it is supposed to. A second mitigation is
+avoiding requests that change server state *(e.g. requests can't change 
+database values)*. To avoid replay attacks, we can include challenges when 
+serving requests so that adversaries cannot replay cookies. A definitive 
+solution would be to eliminate cookies and ask users to authenticate for every 
+action, but this introduces usability problems.
+
+Because HTTP is stateless, developpers need to create their own sessions for
+everything - there is no standard for establishing/structuring sessions; errors
+are common.
+
+## CWE II Risky Resource Management
+
+This is when programmers don't check the resources they create and manage. This
+is again related to unsanitized information used by the program, which results 
+in unintended behaviors, allowing attackers to break security.
+
+There are a whole family of buffer overflow bugs, insufficient sanitization bugs
+and *"TCB under the control of advserary"* bugs.
+
+In particular, executing full pieces of code without checks *(for example in
+updates)* can make it so that tampered software is included into critical
+parts of the system.
+
+## CWE III Porous Defenses
+
+This is when complete mediation principle isn't respected by programmers - for
+example when security functionalities are only partialy covered.
+
+Common errors include poor implementation of security mechanisms, or errors in
+authentication procedures *(e.g. badly assigned permissions, improper use of
+encryption, etc...)*.
 
 # Week 10 - Software Security
 
