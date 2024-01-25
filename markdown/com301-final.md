@@ -1521,3 +1521,249 @@ C/C++ programs.
 - illegal use of `NULL` pointers
 - illegal pointer arithmetic
 
+# Week 11 - Network Security I
+
+Up until now we have covered attacks on the host, but we haven't covered attacks
+on the network yet. Networks are non-linear and complex infrastructures - 
+communication can pass through a number of different devices between Alice and
+Bob. Including LAN and WAN.
+
+## Desired Network Properties
+
+1. **Naming Security:** Association between lower level names *(e.g. network
+addresses)* and higher level names *(human readable)* mustn't be influencable
+by adversaries. $\rightarrow$ Integrity, Authentication, Availability of naming
+service
+2. **Routing Security:** The route over the networks and the eventual delivery
+of messages must not be influenced by the adversary $\rightarrow$ Integrity,
+Authentication, Availability, Authorization
+3. **Session Security:** Messages within the same session cannot be modified
+*(ordering is maintained, and no messages are added/removed)*. $\rightarrow$
+Integrity, Authentication
+4. **Content Security:** The content of the messages must not be readable or
+influenced by adversaries. $\rightarrow$ Confidentiality, Integrity
+
+## Where Are the Problems?
+
+Computers communicate at different layers, which are typically modeled by the
+OSI *(Open System Interconnection)* model which covers from as low as the 
+physical layer all the way up to the application layer.
+
+## IP Routing and ARP
+
+When Alice sends a message to Bob who resides on a different IP subnet, she 
+doesn't in general know his MAC *(medium access code)* address. This is where
+**ARP** *(address resolution protocol)* comes in - it enables machines to find
+mappings between IPs and MACs. Each host maintains a `(IP, MAC)` mapping that
+they cache - when they can't find a mapping, they broadcast an ARP request to
+query for the target IP, which is replied by the host corresponding to that IP.
+
+ARP doens't provide naming security - ARP responses don't include signatures
+or authentication codes. This means that the receiver can't check for integrity
+of the packet or authenticity of the sender - we can't confirm that there is
+no adversary impersonating the sender.
+
+### ARP Spoofing
+
+This involves impersonating another machine. Several attacks can be achieved
+through this
+
+- Man in the middle attacks
+- Abuse of resource allocation
+- Denial of service *(deny packets arriving to intended host)*
+
+The same attacks can happen in DNS, IP, Ethernet, etc... Since network protocols
+weren't initially designed with security in mind. This is a very naïve threat
+model which supposes that outsiders are bad and that insiders are always
+trustworthy.
+
+#### Defenses
+
+The problem with defending against ARP spoofing is rooted in the fact that there
+is no authentication of who is providing the `(IP, MAC)` mapping. We can 
+address this in a couple of ways. One way is to use static and read-only
+entries for critical services in the ARP cache of a host. The other is to use
+some form of ARP spoofing detection/prevention software. These programs can 
+work in several ways
+
+- Check if one IP has more than one MAC or one MAC reported by multiple IPs
+- Certify requests by cross-checking
+- Send out an email if an IP-MAC association changes
+
+The two latter methods effectively implement the separation of privilege
+principle by requiring that adversary compromise more than one entity for a
+security breach.
+
+## DNS *(Domain Name System)*
+
+This allows a user to resolve a domain name with a corresponding IP address.
+
+### DNS Spoofing
+
+There are a couple of ways to go about doing this in practice. One is **cache
+poisoning** which involves polluting the resolver's cache with fake 
+`(IP, Domain)`, expoiting the fasct that resolver's don't authenticate the
+origin of a request before including an association and allowing fake 
+associations to be introduced in the goal of misdirecting victims.
+
+Another method is **DNS Hijacking** which exploits the fact that traffic from
+DNS resolvers don't have any authenticity or integrity protections. We can play
+man in the middle and impersonate the DNS server and misdirect victims, deny
+service to them, or monitor them.
+
+#### Defenses
+
+We have a few solutions in place to address these security vulnerabilities.
+
+- Domain Name System Security Extensions *(DNSSEC)* which extend DNS by 
+providing origin authentication *(through digital signatures on DNS responses
+sent by authroritative name server, prevents poisoning)*. THis doesn't provide
+confidentiality however as the traffic isn't encrypted.
+- DNS-over-HTTPS *(DOH)* which has been use since 2019 and provides integrity
+and confidentiality by encrypting DNS traffic.
+- Others, including DNS-over-TLS, DNSCrypt, DNSCurve
+
+## BGP *(Border Gateway Protocol)*
+
+This protocol constructs routing tables between autonomous systems.
+
+- Routers maintain tables of `(IP subnet -> router IP, cost)` tables.
+- Routes change, therefore BGP updates constantly.
+- Cost is crucial: BGP chooses the routes with the lowest cost.
+
+There is a so called *weak authentication* mechanism between routers which is
+aimed at preventing denial of service. It is built with a short and shared
+secret key *(about 80 bytes)* and ad-hoc message authentication codes based on
+MD5 which is a weak algorithm.
+
+This does not guarantee integrity of the advertised routes - **BGP Hijacking**,
+where an adversary controls or compromises a router somewhere on the internet,
+allows them to inject low-cost routes to redirect portions of traffic to 
+themselves and which eventually propagates to routing tables. Note that this
+attack doesn't itself enable the adversary to redict traffic to themselves - 
+they modify the route not the destination. However, this does open the 
+possibility of performing on-path attacks and modifying packets.
+
+#### Defenses
+
+A possible defense would be to, just like in ARP, try to identify incosistencies
+in routes. For example, a packet travelling from Switzerland to Italy probably
+has no business passing through the USA, although is by no means a technical
+definition as routes also depend on economical factors.
+
+There is a standard BGPSec which works similarly to DNSSec and aims at 
+mitigating hijacking by ensuring that routes are signed by authoritative
+autonomous systems, i.e. those hosting the IPs.
+
+## Lesson to be Learned From Spoofing
+
+1. The network is hostile, and we should assume that insiders aren't trustworthy
+2. The solution is tied to cryptography as there is no centralized authority
+in place to act as a policy originator or to provide a TCB
+3. Asking who has authority
+
+## IP Security
+
+IP *(internet protocol)* enables addressing and routing of packets between hosts
+in a network. IP packets do not include any protection to preserve the integrity
+of the source and destination address - all they have is a non-cryptographic
+checksum. Adversaries can tamper with the IPs *(IP spoofing)* and learn the
+destination of packets *(privacy invasion)*.
+
+### IP Spoofing
+
+Being able to spoof IPs opens up the possibility for the following attack types
+
+- Impersonation
+- Man in the middle, which can involve changing packets or denying service
+*(to do this we may also need to hijack TCP connection)*
+- Denial of Service: we can trigger a server to send packets to a victim's
+computer by impersonating the victim's IP
+
+IPSec, which is cryptographic security properties that hold at the IP level,
+can help mititage these security flaws. It works using
+
+- Key exchange based on public key cryptography or shared symmetric keys
+- **Authentication header** which provides authentication and integrity using 
+HMAC, and protects against replay attacks by including a sequence number
+- **Encapsulating Security Payload** which provides confidentiality, 
+authentication, and replay protection by using the same algorithms as the
+authentication header but on the IP datagram portion of the IP packets.
+
+#### IPSec: Transport Mode
+
+In this moade, IPSec protects the packet paylod *(either with authentication,
+confidentiality, or both depending on the choice)*. The original IP header is
+left intact - the original information is still available and observable 
+including source and destination.
+
+#### IPSec: Tunnel Mode
+
+This creates a new header - the full packet is encrypted and authenticated. 
+The original source and destination of the packet are protected from any 
+potential observers.
+
+Using IPSec in tunnel mode is one of the means used to create a VPN. Inside the
+VPN, packets are fully protected by IPSec. VPNs don't protect against denial
+of service, and doesn't solve the authentication problem as it only 
+authenticates at the network level - applications and programs aren't 
+authenticated.
+
+
+## VPN vs. Proxy
+
+Where a proxy separates two networks, a VPN acts as one network. They both
+have different threat models. Since a proxy sits on the boundary between two
+networks, they can see what happens on both sides and in that way that act as a
+man in the middle. A VPN creates a single network wherein all traffic is 
+end-to-end encrypted, thus no man-in-the-middle can see what happens.
+
+## TCP Security
+
+IP has limitations given that it
+is only designed to facilitate routing.
+
+- **No reliability:** messages can get dropped, and there is no mechanism to 
+ensure arrival of message
+- **No congestion/flow control**  on host or client side
+- **No sessions:** no way of associating messages together in either direction.
+- **No multiplexing:** no way to associate messages to a network address or
+to specific applications/users on host
+
+TCP *(transmission control protocol)* addresses these limitations by helping
+hosts establish and maintain a connection to exchange a stream of messages.
+It determines how the data set by the application is divided into packets that
+can be routed through the network. It manages flow, retransmission, and order.
+It is built up of 
+
+- Ports used to multiplex applications over a connection
+- Sequence, window, and ack numbers used to manage the flow number and 
+guarantee error-free transmission
+- Flags including `ACK` *(acknowledgement)*, `RST` *(terminates a connection)*,
+`SYN` *(acknowledge the beginning of a session)*, `FIN` *(another way of 
+terminating a connection)*.
+
+### Three-Way Handshake
+
+TCP uses a three-way handshake to initialize connection.
+
+1. `SYN`: this is sent by the client as a means to establish desire to connect
+with the server.
+2. `SYN` + `ACK`: the server responds with both flags set, and using the
+received sequence number incremented by 1.
+3. `ACK`: this is sent by the client to acknowlegde the response of the server
+and establishing reliable connection - they can now start the actual data
+transfer.
+
+Like the previous protocols, TCP doesn't include and integrity or authentication
+mechanisms. The sequence numbers act as a vey weak secret that is used as
+authentication - clients and server accept packets as long as the sequence
+number matches what they're expecting to receive. This means that if an 
+adversary can predict the sequence of numbers, then the connection can be
+hijacked, be mitm'd, or can have packets modified.
+
+If the advserary is on-path, then they can directly observe the sequence 
+numbers. In some cases, hosts use a weak random number generator *(e.g. based on
+current time)* that allows adversaries to make guesses with a high chance of 
+collision.
+
