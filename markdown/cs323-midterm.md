@@ -174,7 +174,7 @@ this case, the `init` process with `pid=1` adopts the ophans and reaps them. Thi
 In a basic process, it is created after hardware initialization. The init process
 then spawns a **shell** like bash, zsh, etc...
 
-The shell reads user commands, forks a child *(wtf Sanidyha)*, execs the command
+The shell reads user commands, forks a child *(uWu)*, execs the command
 executable, waits for it to finish, and reads the next command.
 
 The shell can do arbitrarily complex things, like redirect output to a `.txt` file.
