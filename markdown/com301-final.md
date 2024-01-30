@@ -1767,3 +1767,524 @@ numbers. In some cases, hosts use a weak random number generator *(e.g. based on
 current time)* that allows adversaries to make guesses with a high chance of 
 collision.
 
+# Week 12 - Network Security II 
+
+Computers communicate at different *layers* which are typically modeled by the
+open system interconnect model, or **OSI** model for short. This consists of the
+physical layer up to the application layer where programs communicate with each
+other.
+
+## TCP Hijacking - The Basics
+
+The common way that this happens is through a MITM attack, by an adversary that
+can observe communication and intercept packets.
+
+1. Wait for TCP to be established
+2. Wait for authentication phase to be over
+3. Use knowledge of sequence numbers to take over the session and inject 
+malicious traffic
+4. Use malicious traffic to execute commands
+5. Genuine connection gets cancelled *(desynchronization or reset)*.
+
+## Transport Layer Security *(TLS)*
+
+The goal here is to introduce an additional level of security above TCP/IP -
+a middle layer. We want to provide confidentiality, authentication, and integity
+via MAC and signatures. Moreover, we want to provide forward secrecy - learning
+a secret at one point in time doesn't reveal anything about the past.
+
+We implement these features with TLS. Although state-of-the-art TLS 1.3 is 
+pretty great, it's difficult to update older machines to this standard.
+
+### TLS Handshake
+
+In this step, the communication is bootstrapped - cryptographic algorithms are
+agreed upon, and session keys are established.
+
+### Step 1: Client
+
+The client sends `ClientHello, Version, CipherSuite, SessionID, R_c`, where
+`R_c` is a challenge to ensure freshness of communication and prevent replays.
+`Version` will be the TLS version that the client uses.
+
+### Step 2: Server
+
+The server then sends `ServerHello, ChosenCipher, ServerCertificate, 
+ServerKeyExchange, ClientCertRequest, R_s` where
+
+- `ChosenCipher` is the cipher chosen from `CipherSuite`
+- `ServerCertificate` is a signature from an authority on the server's public 
+key
+- `ServerKeyExchange` is the material that will be used to derive the session
+key
+- `R_s` is the server's challenge or reply protection
+- `ClientCertRequest` *(optional)* is a request for the client to provide a
+certificate for two-sided authentication.
+
+### Step 3: Client
+The client then replies with
+
+`ClientCerticiate, ClientKeyExchange, ChangeSipherSec` where
+
+- `ClientCertificate` is the client's certificate if it was requested
+- `ClientKeyExchange` which is material to derive the session key
+- `ChangeCipherSec` which indicates that from now on all messages should be 
+encrypted and authenticated.
+
+The client then sends `ClientFinish` which is an encrypted and authenticated 
+message which tells the server that the client is done with the handshake.
+
+### Step 4: Server
+
+The server also indicates that it will, from here on out, encrypt messages and
+authenticate them, with `ChangeCipherSec`. It then sends, like the client, a
+`ServerFinish` to say that the server has finished its side of the handshake.
+
+## Shared Keys with TLS
+
+TLS offers two modes for obtaining a shared key between client and server.
+
+- **Key Transport:** using the public key of the server, the client will send a
+symmetric key. This mode isn't forward secure, as if at any point the servers
+private key ends up falling into the hands of an adversary, they can decrypt 
+all past communication and symmetric keys.
+
+- **Key Agreement:** using Diffie-Hellman, or its elliptic curve equivalent. The
+client and server agree on a short-duration key for the session. This key is
+independent in every session.
+
+After Snowden revealed that the NSA could brute force RSA keys, huge changes
+were made and ephemeral keys were adopted.
+
+## Denial Of Service
+
+The goal here is to prevent legit users from accessing a service. There are
+a couple of available options
+
+1. Crash Victim by exploiting software flaws and bring it to a halt
+2. Exhaust resources, be it bandwidth, TCP connection *(fill up their TCP state
+tables in kernel)* or their hardware resources *(CPU or memory)*.
+
+### Example: TCP SYN Flood
+
+This takes advantage of the fact that after receiving a SYN, and then sending
+a responding SYN/ACK, the server will wait for the connection to continue. The
+state relating to this connection is stored in a ***TCP Control Block, (TCB)***,
+which evidently needs to be stored in memory, and takes about 280 bytes. The
+kernel can only host a maximum number of TCB's, thus an adversary can exhaust
+this TCB space and the host won't be able to open any new connections.
+
+#### SYN Cookies 
+
+The idea to prevent this is to heavily compress TCP state for half-opened 
+connections instead of creating a full TCB. If these connections only take a few
+bytes, then we can store hundreds of thousands of them without too much hassle.
+**We push the state to the client** using SYN cookies that are protected 
+cryptographically under a fixed key *(confidentiality and integrity)* and that
+must be provided by the client to complete the TCP handshake.
+
+#### Proof of Work
+
+Another idea is to make the client perform some task before engaging in the 
+operation - this is called proof of work. It can for instance compute hashes
+that are easy to verify, but expensive to compute. This isn't a perfect 
+countermeasure, but it does introduce a cost barrier for deploying DoS attacks
+at large scale.
+
+### Example: Teardrop Attack
+
+Sometimes packets are too long to be transmitted as a single unit, and thus are
+fragmented. We can send packets with overlapping offsets that aren't 
+"reassemblable" by TCP/IP, which causeed the machine to crash.
+
+### Example: Smurf Attack
+
+ICMP is a transport-level protocol within TCP/IP that can be used to inform 
+network connectivity issues to the origin of a connection. It sends control 
+messages such as *destination network unreachable* or *source route failed*.
+
+A smurf attack involves broadcasting an ICMP message spoofing the source IP to
+point to the address of the victim. As this is a broadcasted message, all hosts
+in the network will receive the message and respond to the victim pointed to
+by the source of the ICMP. The victim gets flooded, and all of its bandwidth
+gets consumed, preventing further communication.
+
+### Example: DoS without Flooding - TCP RST Injection
+
+The *Great Firewall of China* exploits the fact that there is no TCP 
+authentication to just end connections initiated inside the network. After the
+3-way handhsake, instead of stopping hte messages from the server, the Great
+Firewall sends forged RST packets to the client. When receiving these packets,
+the client closes the connection even if the server is still sending answers.
+The denial of service happend without the server being attacked! From the POV
+of the server, the client just lost their connection.
+
+## Other forms of protection
+
+Most of the network protections that we have seen rely heavily on cryptography.
+However, we will see that there are other solutions that complement crypto by
+reducing the chances that an adversary can interact with a victim's machine.
+
+### Network Address Translation *(NAT)*
+
+The router that maintains routing tables of the form 
+
+$$
+(IP_{internal}, port) \leftrightarrow (IP_{external}, port)
+$$
+
+This is often done by a firewall, and its goal is to limie the number of public
+IP addresses an organization or company must use. While it's benefits are mostly
+cost-saving, it also brings security advantages. As there is only one public IP,
+the adversary cannot contact machines in the network unless there is already a
+mapped port open to the public.
+
+### Network Firewalls
+
+Another common protection is to use firewalls, which are routers that inspect
+the communication and implement some form of access control rules to decide 
+which flows should enter into the local network.
+
+#### Simple Packet Filter *(80s)*
+
+The simplest form of firewall is to inspect each packet in isolation, and either
+reject or allow based on a rule set.
+
+- Only allow mailservers to connect to other mailservers
+- Force all email traffic to a specific mailserver
+
+This is simple to imlement and makes instant decisions, but has limited 
+expressibility w.r.t. policiies and content filtering.
+
+#### Stateful Firewalls *(90s)*
+
+This has a better understanding of TCP/UDP semantics, and can reject or allow
+based on some state.
+
+For instance, the FTP protocol client opens a connection to the server, connects
+back to a high port of the client to transfer the file. A simple firewall 
+chooses between allowing all packets to high ports all the time, or none at all.
+A stateful firewall can detect an active FTP session with the server, and allow
+a connection back to a high port from the same server to the same client
+
+#### Application Firewalls *(90s)*
+
+We perform **Deep Packet Inspection (DPI)**, which evalutes the content and 
+allows/rejects based on a stateful or stateless rule set. This enables much more
+sophisticated filtering. For example
+
+- Transparent redirection of HTTP traffic to a local proxy to save bandwidth
+- Transparent blocking of certain websites *(social networks from a worksplace)*
+- Scanning downloaded executables resources for viruses
+- Blocking peer-to-peer protocols, no matter which port they use
+- Monitoring traffic to detect leaks of sensitive documents
+
+As for encrypted *(IPSec, SSL/TLS)*, we have several options
+
+- Block all encrypted traffic
+- Install client certificates that enable decryption and inspection at the 
+firewall.
+
+### Firewall Downsides
+
+- Full mediation is slow *(read, write, check)*, and simple observation is 
+cheaper *(read, inject)*
+- Acts at network-level, can't make decisions about authentication and
+authorization since those are handled by application layer *(no knowledge of
+principals behind the flow)*.
+
+Network protocols in general have very little secuity, in particular headers
+which have no confidentiality or authenticity. In general, firewalls are not
+very strong mechanisms, but they do help reduce the surface of attack.
+
+### Defense in Depth - De-Militarized Zone *(DMZ)*
+
+Split the "world" into three zones
+
+- WAN which is everything outside
+- LAN which is everything internal
+- DMZ which contains public services
+
+This relies on a firewall to ensure only traffic to well-known services 
+traverses from outer firewall. It also ensures that only traffic from a
+**bastion host** enters the LAN from the DMZ - this bastion host performs access
+contorl and filtering.
+
+The result is that the LAN can access DMZ and WAN, DMZ can access the WAN, but
+flows in the other direction are restricted. In this combination, if web 
+services are compromised, they can only affect other web services and not the
+internal services behind the bastion host.
+
+# Week 13 - Privacy
+
+Privacy is actually a security property
+
+- For individuals against profiling, manipulation and identity theft
+- For companies from revealing of trade secrets, internal operations, etc...
+- For governments/military from revealing of national secrets, political
+negotiations, etc...
+
+In general this is very abstract and subjective.
+
+## Privacy Enhancing Techniques *(PETs)*
+
+There are three different types depending on the concerns that they address,
+the adversarial model they aim at defeating, and their challenges and 
+limitations.
+
+### 1. The adversaries are others
+
+Here, the privacy problem is defined by **users**. Technology brings problems.
+The goal here is to not surprise the user, and its limitations are that it 
+doesn't protect the user from the supposedly trusted service provider.
+
+### 2. The provider may be adversarial
+
+The privacy problem is defined by legislation. Data should not be collected 
+without user consent, or processed for illegitimate uses. data should be 
+secured, correct, maintaing integrity, and we should be able to delete it if 
+necessary.
+
+Our goal is to comply with data protection principles.
+
+- **Informed consent:** the users must be aware of what information is being 
+collected, and how it will be processed and shared with third parties.
+- **Purpose limitation:** the data that is colleced can only be be processed for
+purposes in accordance with the goal of the application.
+- **Data minimization:** The application must collect the minimal amount of data
+necessary for the provision of the service
+- **Subject acess rights:** the users have the right to demand service providers
+tell them what data has been collected about them, how it has been processed,
+and demand its correction or deletion
+- Data Security
+- **Auditability and accountability:** companies must make sure that their 
+collection and processing can be audited - i.e. they can prove what data they
+colleced, and what happened to the data. This means that if something goes 
+wrong, they can be held accountable for the problem
+- **Access control:** naturally it also helps to prevent unauthorized parties 
+from accessing sensitive data, and it also helps identifying the principal that 
+accessed the data (logging).
+
+**Anonymization:** aims to decouple data from identity so that it is not
+considered personal data anymore. Once it is not personal data, it isn't subject
+to data protection regulation.
+
+The PETs that support institutional privacy typically protect data and its uses,
+but don't diminish data collection. Data minimization is enforced at the policy
+level and not at the technology level.
+
+### 3. Everyone is the adversary
+
+This is sometimes called anti-surveillance privacy as they are built to solve
+the problem that stems from the fact that the application suite and 
+infrastructure itself leak leak a huge amount of information - so much so that
+they become a surveillance infrastructure. We consider the infrastructure itself
+to be an adversary
+
+The policy is defined by security experts, and the data is disclosed by default
+through ICT infrastructure.
+
+The goal is to minimize disclosure of personal information to anyone *(explicit
+and implicit)* and minimize the need to trust anyone else.
+
+It is limited by the fact that privacy preserving patterns are narrow, and it is
+difficult to create "general purpose privacy".
+
+## End-to-End Encryption
+
+This encrypts traffic and prevents readbility from any third party with access
+to the interconnecting network, but this doesn't mean that the provider can't
+access the encrypted message! It was sent using their service! In theory, anyone
+can force the client to disclose the data.
+
+## Traffic Analysis
+
+This is the process of analyzing metadata associated to communications such as
+the identity of participanets; when, how often, and for how long they talk, 
+etc...
+
+## Protecting the Communication Layer
+
+A family of technologies that protect traffic metadata to prevent traffic 
+analysis are **anonymous communications** which hide who talks with whom, for
+how long and how often. These technologies can ofc be advantageous to malicious
+people such as criminals, but they are also essential for many well-intentioned
+people.
+
+### Anonymous Connections
+
+- **Provide bitwise unlinkability:** make inputs and outputs to anonmymous
+communication system appear different $\rightarrow$ unlinkability
+- **Repacketizing and rescheduling:** Destroy patterns, which defends against
+traffic analysis
+
+## Tor Network - Onion Routing
+
+Uses onion encrypting
+
+1. User chooses a path *(series of nodes)*
+2. Chooses a symmetric key with each of the nodes using an authenticated DH
+agreement *(onions sign their part of the key agreement protocol so that the
+user can be sure that it is speaking with a tor node)*.
+3. Encrypt message with key of exit node, then the one before that, etc... until
+the first node $\rightarrow$ layers of encryption. Each node decrypts before
+sending it forward to the next node to decrypt their part.
+
+To respond the exit node will do the same thing.
+
+Tor is the most widely used example of **low-latency anonymous communication**.
+There are also forms of **high-latency anonymous communication**, wherein every
+single message has a different path *(in contrast with one fixed path per 
+stream)*. These are usually used for things like email, voting, and bitcoin.
+
+Low-latency makes the assumption that the adversary cannot see both edges
+of communication, thus it isn't resistant to global adversary. High-latency
+doesn't make this assumption, and thus is resistant.
+
+In tor, anonymous communication happens at the application layer - not the 
+transport layer. They aren't routers. We can refer to them as **overlay 
+networks**, as they operate on top of an another network such as the internet.
+
+## Anonymous Connection vs. VPN
+
+The difference is that anonymous communication provides much stronger protection
+than VPNs. This is because anonymous connections such as Tor are distributed,
+whereas a VPN requires placing trust in a centralized entity. Otherwise put,
+a VPN can be seen as a unique node managing communication thus there is no
+anonymity guarantee. Anonymous communication has no individual node, thus
+providing much stronger protection.
+
+## Application Layer Anonymity
+
+Even when using anonymous connections, anonymity may be compromised when 
+authentication is required by the server. We introduce **anonymous credentials**
+which are also known as attribute-based credentials. These hide the user 
+identity while providing authentication. For example instead of asking for the
+user's exact date of birth, we could just store in the credential whether or not
+they are older than 18. We can thus make two users with the same attribute
+indistinguishable.
+
+Attribute-based credentials are somewhat comparable to public key infrastucture
+in that
+
+- both systems a trusted issuer check that the users actually have the 
+attributes, and provide a signature on those attributes
+- Require the user to have some secret in order to prove these attributes
+
+Bey they also differ in that
+
+- Attribute-based credentials miniize data given to the service provider
+*(only proof of possession of an attribute, not the value itself.)*
+- In attribute-based credentials users cannnot be identified and therefore can't
+be tracked. PKI certificates, on the contrary, contain names and always "look"
+the same - this enables tracking.
+
+# Week 14 - Malware
+
+In some of the previously introduced attacks, an adversary actively exploits
+some model, design or implementation errors. In reality, a lot of compromises
+are related to social engineering or malware.
+
+Malware, which is short for *malicious software*, is not the same thing as a 
+virus. A virus is malware, but the converse isn't true.
+
+## Rise of Malware
+
+Since most systems in the world run on either Android or windows, they make very
+tempting targets for malware programmers. Many clueless targets are available,
+and deployment of remote/distributed attacks is increasingly easy.
+
+## Types of Malware
+
+### Virus
+
+A piece of software that infects programs to monitor, steal, or destroy things.
+Think ransomware, which threatens to destroy a system if the owner doens't send
+bitcoins. A virus has the same permissions as the host, and it cannot survive
+without the host.
+
+A virus can replicate itself and infect other content or machines, spreading
+through a network or hardware. They can act on
+
+- Files
+- Macros *(overwrite macro executed on a program)*
+- Boost infection *(infect boot partition)*. this one is difficult, but also the
+most dangerous.
+
+To defend against viruses, we can use 
+
+- **Antivirus software** which has either signature-based detection *(check the
+binary to see if it has instructions that match past viruses)* or heuristics
+*(check for signs of infection or anomalies in the system)*.
+- **Sandboxing** where we run the program in a restricted environment.
+
+### Worm
+
+This is a self-replicating computer program that uses a network to send copies
+of itself to other nodes. It doesn't need a host program to execute. It can 
+spread autonomously over the network, harvesting emails, network enumeration,
+or just canning things.
+
+We can defend against worms at the
+
+- **Host level:** protect software from remote exploitation, stack other 
+protection techniques, achieve diversity *(different OS, interfaces)* to require
+more sophisticated worms, or use antivirus protection.
+- **Network level:** Limit the number of outgoing connections, which limits the
+worm spreading. We can also use a personal firewall that has rules that avoid
+network connections with behavior incosistent with typical behavior.
+
+#### Intrusion Detection Systems *(IDS)*
+
+Aims at identifying when the system is under attack from a malicious entity. Can
+either run on the host as a process, or in the network inspecting traffic. We
+can do this 
+
+- Signature Based: looks for unknown patterns in connections or host processes
+- Anomaly-based: tries to model what normal behavior is, and tags any deviations
+as malicious. Prone to producing false alarms.
+
+These aren't limited to detecting worms - can be used to identity other 
+malicious behavior.
+
+### Trojan Horse
+
+Malware that appears to perform a desirable function, but it also performs some
+undisclosed malicous activities. It cannot replicate, but it can fuck shit up
+in many different ways, be it spyware, backdoors *(remote access)*, mail replay
+*(spammers)* and corrupt files.
+
+### Rootkit
+
+This is when an adversary controls code that resides deep within the TCB - 
+hides their presence by modifying the OS. It is installed by a hacker after a 
+system has already been compromised. These are extremely dangerous since they 
+are inside the TCB, and vey difficult to detect. They can be used to hide other
+malicious files stored on the system.
+
+### Backdoor
+
+Hidden functionality that allows the adversary to bypass some security 
+mechanism. We can audit the program, but what if the compiler itself has a 
+backdoor? This chain of reasoning leads all the way back down to the first
+instance of the compiler.
+
+### Botnets
+
+Multiple *(loads of)* compromised hosts under the control of a single entity.
+This entity sends commands to the bots.
+
+Initially, the hacker would have the ***botnet Command & Control center (C&C)***
+on a single system. But this breaks the *least common mechanism* principle. 
+These days, there's no single C&C - we do everything P2P. Even if some bots are
+taken down, the network can still operate. We can also do a hybrid approach
+wherein the C&C takes the form of a P2P network that then connects to individial
+bots outside of it.
+
+Botnets are typically very profitable for the botnet owner.
+
+To defend against this, we can attack C&C infrastructure *(off-line the 
+communication channel, highjack/poison the DNS route traffic to a black hole)*
+or use honeypots *(vulnerable computer that serves no purpose other than to 
+attract attackers and study their behavior in controller environments)*.
+
